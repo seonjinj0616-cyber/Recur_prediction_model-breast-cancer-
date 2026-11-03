@@ -141,7 +141,7 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 |---|---|---|---|
 | **1. 종양 밀집 영역만 사용** | 세포 분할 모델로 타일별 종양 세포 비율을 계산하고, 종양 비율이 높은 타일만 남김 | TCGA 1,047명 슬라이드 | SEQUOIA는 배경만 빼고 **무작위 타일** 사용, 종양 선별 없음 |
 | **2. H&E ↔ RNA 연관 순위** | 남긴 타일로 유전자 발현 예측 → **SEQUOIA와 같은 기준**으로 "잘 예측된 유전자" 판정 → Pearson r 순으로 순위 | TCGA 1,047명 (HR+/HER2− 531명은 민감도), CPTAC로 외부 확인 | 기준은 SEQUOIA와 같게 두고, **순위 기준(Pearson r)을 명시** (SEQUOIA는 미기재) |
-| **3. RNA ↔ 원격 재발** | 유전자별 Cox (림프절·크기·등급·나이 보정) → Cox-LASSO 안정성 선택 → R 목록 | METABRIC HR+/HER2− 1,251명 (기록 완전, 원격 재발 272건) | SEQUOIA는 재발 유전자를 **TCGA(추적 약 2년, 재발 전체)**에서 고름 → 우리는 **장기 추적 + 원격 재발** |
+| **3. RNA ↔ 원격 재발** | 유전자별 Cox (림프절·크기·등급·나이 보정) → FDR < 0.05 전부를 R 목록으로 | METABRIC HR+/HER2− 1,251명 (기록 완전, 원격 재발 272건) | SEQUOIA는 재발 유전자를 **TCGA(추적 약 2년, 재발 전체)**에서 고름 → 우리는 **장기 추적 + 원격 재발** |
 | **4. 교집합** | P(단계 2) ∩ R(단계 3), 두 플랫폼에 모두 있는 유전자만 | — | 두 목록을 **독립 코호트에서** 만든 뒤 교집합 (SEQUOIA는 같은 TCGA에서 순차 필터) |
 | **5. 재발 수치 계산** | 교집합 유전자로 Cox 모델 학습 → 가중치 고정 → 재발 위험 점수 + 10년 원격 재발 확률 → SCAN-B 외부 검증 | 학습: METABRIC / 검증: SCAN-B 검사 권고 3,095명 (원격 재발 128건) | HR+/HER2−·검사 권고 코호트 평가, 유사 RS와 같은 환자로 비교 |
 
@@ -187,7 +187,7 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 | **A1** | 발현 전처리 | METABRIC: 프로브 → 유전자 평균 (이미 log2). SCAN-B: Ensembl → 유전자 기호, log2(FPKM + 0.1). METABRIC ∩ SCAN-B ∩ TCGA 공통 유전자만 → `data/{metabric,scanb}/expr_hr_her2neg.parquet`. z-score는 분석 범위마다 `expression.zscore()`로 계산 | **완료**: 공통 **17,813개** 유전자 (Oncotype 21개 모두 포함). METABRIC 1,413명, SCAN-B 5,037명 (DRFi 없는 환자 포함). METABRIC 결측 13개 (Oncotype 외 11개 유전자, 1개씩) → 사용할 때 유전자 중앙값으로 채움 |
 | **A2** | 코호트 표 고정 | scratchpad 집계 코드를 `cohort.py`로 옮김 (`standardize_metabric`, `standardize_scanb`, 기존 `assign_group` 재사용). Rueda DR/TDR, 재발 기록 완전, 내분비요법만 여부 → `data/{metabric,scanb}/cohort.csv` | **완료** (METABRIC 검사 권고 + 기록 완전 989명 / 원격 재발 179건, SCAN-B 검사 권고 3,095명 / 128건) |
 | **A3** | 유사 RS 예후력 확인 | `pseudo_rs.py`를 METABRIC(마이크로어레이 log2 값) · SCAN-B(log2 FPKM)에 적용 → 10년 원격 재발 C-index, 순위 3구간 KM, 내분비요법만 하위군 | **완료** (`labels/scripts/pseudo_rs_prognosis.py`, 결과 `outputs/module1/a3_*`): 검사 권고 코호트에서 10년 원격 재발 C-index **METABRIC 0.625** (95% CI 0.59–0.66, 154건) · **SCAN-B 0.705** (0.66–0.75, 127건). 10년 재발률 low / intermediate / high = METABRIC 11.6 / 16.8 / 27.5%, SCAN-B 4.2 / 6.1 / 14.4%. 내분비요법만 하위군에서도 high가 갈림 (log-rank p < 0.001). 단, low와 intermediate의 차이는 내분비요법만 하위군에서 작음 (METABRIC 14.5 vs 15.6%, SCAN-B 4.9 vs 5.5%) |
-| **A4** | **단계 3: R 목록** | METABRIC HR+/HER2− 기록 완전 1,251명. 유전자별 Cox (림프절 · 크기 · 등급 · 나이 보정, FDR) → Cox-LASSO 부트스트랩 100회, 70% 이상 선택 → `outputs/module1/r_genes.csv` | 유전자 목록 + 선택 빈도 + 위험비. 증식 · Oncotype 유전자와 겹치는 수 기록 |
+| **A4** | **단계 3: R 목록** | METABRIC HR+/HER2− 기록 완전 1,251명 (원격 재발 272건). 유전자별 Cox (log 림프절 수 · 크기 · 등급 · 나이 보정, BH FDR) → FDR < 0.05 전부를 R 목록으로 → `outputs/module1/r_genes.csv` (`labels/scripts/r_genes.py`) | **완료**: **493개** (위험 332 / 보호 161). 보정 없이는 2,054개, 임상 보정으로 1,574개 빠짐. Oncotype 유전자는 증식 4개(AURKA · BIRC5 · CCNB1 · MKI67)만 남음. 처음 계획한 Cox-LASSO · elastic net 안정성 선택은 증식 유전자 묶음에서 대표만 남겨(선택 비율 0–24%) 교집합 목적에 맞지 않아 뺐음. SCAN-B 확인: 493개 Cox 점수 C-index 0.691, elastic net 29개 0.649, 무작위 29개 평균 0.612 |
 | **A5** | 비교 기준선 준비 | 증식 점수 (Oncotype 증식 5개), NPI (METABRIC 열 / SCAN-B는 크기 · 림프절 · NHG로 계산), PAM50 ROR (SCAN-B 제공값), 무작위 유전자 세트, SEQUOIA 272개 서명 (Supplementary Data 5 확보 필요) | 같은 환자에게 기준선 점수가 모두 계산됨 |
 
 ### B. H&E 갈래 (TCGA · CPTAC)

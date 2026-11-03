@@ -1,7 +1,7 @@
 """manifest.csv의 rna_file_id로 STAR-Counts RNA-seq 파일을 받는다.
 
 먼저 data.manifest를 실행한다. 이미 받은 파일은 건너뛰므로 중간에 끊겨도 다시 실행하면 된다.
-실행: python -m module1_recurrence.data.rnaseq_download [--limit N]
+실행: python -m module1_recurrence.data.scripts.rnaseq_download [--limit N]
 결과: data/tcga/rnaseq/{patient_id}.tsv
 """
 import argparse
@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pandas as pd
 
-from module1_recurrence.data.gdc_fetch import RAW, download
+from module1_recurrence.data.scripts.gdc_fetch import RAW, download
 
 MANIFEST = RAW.parent / "manifest.csv"
 OUT_DIR = RAW.parent / "rnaseq"

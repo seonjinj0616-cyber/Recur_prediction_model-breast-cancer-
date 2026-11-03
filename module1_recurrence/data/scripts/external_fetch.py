@@ -4,7 +4,7 @@ METABRIC: cBioPortal brca_metabric 임상 · mRNA 샘플 목록, Rueda et al. Na
 SCAN-B: Staaf et al. 2022 Mendeley Data (doi 10.17632/yzxtxn4nmd.3, CC BY 4.0) 임상 표 · 유전자 주석, GEO GSE96058 series matrix
 발현 행렬은 커서(METABRIC 약 0.7 GB, SCAN-B 약 2.4 GB) --expression 을 줄 때만 받는다.
 이미 있는 파일은 건너뛴다. --check 는 받지 않고 주소가 살아 있는지와 크기만 확인한다.
-실행: python -m module1_recurrence.data.external_fetch [--expression] [--check]
+실행: python -m module1_recurrence.data.scripts.external_fetch [--expression] [--check]
 결과: data/metabric/raw/, data/scanb/raw/, data/metabric/hr_her2neg.csv
 """
 import argparse
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pandas as pd
 
-DATA = Path(__file__).resolve().parents[2] / "data"
+DATA = Path(__file__).resolve().parents[3] / "data"
 METABRIC = DATA / "metabric" / "raw"
 SCANB = DATA / "scanb" / "raw"
 

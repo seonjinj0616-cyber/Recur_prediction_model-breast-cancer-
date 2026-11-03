@@ -1,13 +1,13 @@
 """TCGA 임상 · 진단 슬라이드 · RNA-seq · TCGA-CDR을 환자 바코드로 연결해 manifest.csv를 만든다.
 
 먼저 gdc_fetch를 실행해 data/tcga/raw/를 채운다.
-실행: python -m module1_recurrence.data.manifest
+실행: python -m module1_recurrence.data.scripts.manifest
 결과: data/tcga/manifest.csv (환자 1행)
 """
 import pandas as pd
 
-from module1_recurrence.cohort import RECOMMENDED, standardize_tcga
-from module1_recurrence.data.gdc_fetch import CLINICAL_FILE_NAME, RAW
+from module1_recurrence.scripts.cohort import RECOMMENDED, standardize_tcga
+from module1_recurrence.data.scripts.gdc_fetch import CLINICAL_FILE_NAME, RAW
 
 OUT = RAW.parent / "manifest.csv"
 

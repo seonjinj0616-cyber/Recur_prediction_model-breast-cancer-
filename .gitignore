@@ -1,5 +1,5 @@
 # 데이터는 올리지 않는다: 용량(발현 행렬 · 슬라이드), 라이선스(BCNB 재배포 금지, METABRIC · Rueda 부록 표기 없음)
-# 받는 방법은 module1_recurrence/data/*_fetch.py, *_download.py 참고
+# 받는 방법은 module1_recurrence/data/scripts/*_fetch.py, *_download.py 참고
 /data/
 /BCNB/
 /outputs/

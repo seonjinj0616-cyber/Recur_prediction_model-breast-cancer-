@@ -52,7 +52,7 @@ Rueda et al. 2019 부록(Table S5)의 **원격 재발(DR, TDR)** 사용. HR+/HER
 - 치료 (검사 권고 + 기록 완전): 내분비만 632, 무치료 298, 항암 + 내분비 51, 항암만 8.
 - 그룹은 `cohort.py`의 `assign_group` 규칙(TCGA와 같음)으로 나눔: 종양 ≤ 0.5 cm이면 림프절 상태와 상관없이 T ≤ 0.5 cm 그룹. 종양 크기 결측은 > 0.5 cm로 처리.
 - 다른 세션 집계(검사 권고 1,102명, 원격 재발 264건)와 약간 다른 이유: 종양 크기 결측 처리 차이.
-- 표 파일: `data/metabric/cohort.csv` (`python -m module1_recurrence.data.external_cohort`)
+- 표 파일: `data/metabric/cohort.csv` (`python -m module1_recurrence.data.scripts.external_cohort`)
 
 ### 1-3. SCAN-B (GSE96058) — 서명 외부 검증 (단계 5)
 RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follow.up.cohort) 환자당 1샘플.
@@ -82,7 +82,7 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 | 재발 정보 | 없음 → 재발 검증 불가 |
 
 ### 1-5. 데이터 위치
-다운로드: `python -m module1_recurrence.data.external_fetch` (발현 행렬까지: `--expression`, 주소만 확인: `--check`)
+다운로드: `python -m module1_recurrence.data.scripts.external_fetch` (발현 행렬까지: `--expression`, 주소만 확인: `--check`)
 
 | 경로 | 내용 | 출처 · 라이선스 | GitHub |
 |---|---|---|---|
@@ -99,6 +99,7 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 - Oncotype 21개 유전자는 두 행렬 모두에 있음 (CTSL2는 현재 이름 **CTSV**로 찾음).
 - METABRIC은 같은 유전자 기호가 여러 행(프로브)인 경우가 219개 → 유전자별로 평균내서 사용.
 - SCAN-B 행은 Ensembl ID → `Gene.ID.ann.txt`로 유전자 기호 변환.
+- 전처리 결과: `data/metabric/expr_hr_her2neg.parquet`, `data/scanb/expr_hr_her2neg.parquet`, 공통 유전자 목록 `data/expr_common_genes.txt` (`python -m module1_recurrence.data.scripts.expression`)
 
 ---
 
@@ -183,7 +184,7 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 ### A. RNA 갈래 (METABRIC · SCAN-B)
 | # | 작업 | 입력 → 출력 | 완료 기준 |
 |---|---|---|---|
-| **A1** | 발현 전처리 | METABRIC: 프로브 → 유전자 평균. SCAN-B: Ensembl → 유전자 기호, log2(FPKM + 0.1). 유전자별 코호트 안 z-score. METABRIC ∩ SCAN-B ∩ TCGA 공통 유전자만 → `data/{metabric,scanb}/expr_hr_her2neg.parquet` | 코호트 전원 포함, 공통 유전자 수 기록 |
+| **A1** | 발현 전처리 | METABRIC: 프로브 → 유전자 평균 (이미 log2). SCAN-B: Ensembl → 유전자 기호, log2(FPKM + 0.1). METABRIC ∩ SCAN-B ∩ TCGA 공통 유전자만 → `data/{metabric,scanb}/expr_hr_her2neg.parquet`. z-score는 분석 범위마다 `expression.zscore()`로 계산 | **완료**: 공통 **17,813개** 유전자 (Oncotype 21개 모두 포함). METABRIC 1,413명, SCAN-B 5,037명 (DRFi 없는 환자 포함). METABRIC 결측 13개 (Oncotype 외 11개 유전자, 1개씩) → 사용할 때 유전자 중앙값으로 채움 |
 | **A2** | 코호트 표 고정 | scratchpad 집계 코드를 `cohort.py`로 옮김 (`standardize_metabric`, `standardize_scanb`, 기존 `assign_group` 재사용). Rueda DR/TDR, 재발 기록 완전, 내분비요법만 여부 → `data/{metabric,scanb}/cohort.csv` | **완료** (METABRIC 검사 권고 + 기록 완전 989명 / 원격 재발 179건, SCAN-B 검사 권고 3,095명 / 128건) |
 | **A3** | 유사 RS 예후력 확인 | `pseudo_rs.py`를 METABRIC(마이크로어레이 log2 값) · SCAN-B(log2 FPKM)에 적용 → 10년 원격 재발 C-index, 순위 3구간 KM, 내분비요법만 하위군 | "라벨이 원격 재발을 나누는가"에 답함 (TCGA에서는 p = 0.21로 답하지 못함) |
 | **A4** | **단계 3: R 목록** | METABRIC HR+/HER2− 기록 완전 1,251명. 유전자별 Cox (림프절 · 크기 · 등급 · 나이 보정, FDR) → Cox-LASSO 부트스트랩 100회, 70% 이상 선택 → `outputs/module1/r_genes.csv` | 유전자 목록 + 선택 빈도 + 위험비. 증식 · Oncotype 유전자와 겹치는 수 기록 |
@@ -194,7 +195,7 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 |---|---|---|---|
 | **B1** | TCGA 데이터 확장 | 여성 + 슬라이드 + RNA 1,047명으로 manifest 확장, 나머지 532명 RNA 받기 | **저장 공간**: 환자당 슬라이드 1장만 받아도 약 1.09 TB, 남은 공간 67 GB → `slide_download.py`처럼 **받기 → 특징 추출 → 삭제**를 묶음 단위로 반복하거나 외장 저장소 확보 |
 | **B2** | **단계 1: 종양 영역** | 세포 분할 모델 선택 (HoVer-Net / CellViT / BCSS 타일 분류기, 라이선스 확인) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 | 기준값은 분포를 보고 정한 뒤 고정. 전체 조직 타일 버전도 함께 저장 |
-| **B3** | 특징 추출 | `features/extract.py` (공통 wsi_pipeline)로 종양 타일 / 전체 타일 특징 → `data/tcga/features/` | B1의 묶음 처리와 같이 돌려서 슬라이드를 바로 지움 |
+| **B3** | 특징 추출 | `features/scripts/extract.py` (공통 wsi_pipeline)로 종양 타일 / 전체 타일 특징 → `data/tcga/features/` | B1의 묶음 처리와 같이 돌려서 슬라이드를 바로 지움 |
 | **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | 종양 타일 / 전체 타일 두 버전 결과 비교 |
 
 ### C. 합치기

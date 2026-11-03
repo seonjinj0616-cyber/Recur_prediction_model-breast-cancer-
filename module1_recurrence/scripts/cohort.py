@@ -3,13 +3,13 @@
 TCGA · BCNB · METABRIC · SCAN-B를 같은 표준 열로 바꾼 뒤 assign_group 하나로 나눈다.
 표준 열: patient_id, hr, her2, node_group(N0 / N1 / N2+ / None), tumor_gt_05cm, postmenopausal
 
-실행(BCNB 확인용): python -m module1_recurrence.cohort
+실행(BCNB 확인용): python -m module1_recurrence.scripts.cohort
 """
 from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 BCNB_CLINICAL = ROOT / "BCNB" / "BCNB" / "patient-clinical-data.xlsx"
 
 # 검사 권고: N0 & 종양 > 0.5cm, N1(1–3개) & 폐경 후

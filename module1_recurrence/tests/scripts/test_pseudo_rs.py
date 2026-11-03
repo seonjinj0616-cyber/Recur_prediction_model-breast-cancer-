@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from module1_recurrence.labels.pseudo_rs import (CANCER_GENES, REFERENCE, assign_risk,
+from module1_recurrence.labels.scripts.pseudo_rs import (CANCER_GENES, REFERENCE, assign_risk,
                                                  normalize, score)
 
 

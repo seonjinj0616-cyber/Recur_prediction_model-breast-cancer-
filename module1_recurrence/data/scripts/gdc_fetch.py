@@ -1,6 +1,6 @@
 """모듈 1 원천 데이터를 NCI GDC에서 받는다 (open access, 가입 불필요).
 
-실행: python -m module1_recurrence.data.gdc_fetch
+실행: python -m module1_recurrence.data.scripts.gdc_fetch
 결과: data/tcga/raw/ 아래에 임상, TCGA-CDR, 슬라이드 목록, RNA-seq 목록
 """
 import json
@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 
 API = "https://api.gdc.cancer.gov"
-RAW = Path(__file__).resolve().parents[2] / "data" / "tcga" / "raw"
+RAW = Path(__file__).resolve().parents[3] / "data" / "tcga" / "raw"
 
 # TCGA-CDR (Liu et al., Cell 2018) 부록. GDC PanCanAtlas 출판 페이지의 파일
 CDR_FILE_ID = "1b5f413e-a8d1-4d10-92eb-7c4ae739ed81"

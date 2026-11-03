@@ -4,13 +4,13 @@ log2 TPM → 기준 유전자 5개 평균으로 정규화 → 0–15 척도 → 
 계수와 그룹 하한값은 genefu oncotypedx.R 소스와 대조했다.
 RNA-seq는 RT-qPCR과 척도가 달라 RS 26 기준이 맞지 않는다 (그대로 쓰면 73%가 26 이상).
 그래서 위험 구간은 점수 순위로 나눈다: TAILORx 분포처럼 하위 16% low, 상위 17% high.
-실행: python -m module1_recurrence.labels.pseudo_rs
+실행: python -m module1_recurrence.labels.scripts.pseudo_rs
 결과: data/tcga/pseudo_rs.csv (patient_id, 그룹 점수, pseudo_rs, rs_group, high_risk)
 """
 import numpy as np
 import pandas as pd
 
-from module1_recurrence.data.gdc_fetch import RAW
+from module1_recurrence.data.scripts.gdc_fetch import RAW
 
 MANIFEST = RAW.parent / "manifest.csv"
 RNA_DIR = RAW.parent / "rnaseq"

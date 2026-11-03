@@ -2,13 +2,13 @@
 
 먼저 external_fetch를 실행한다.
 METABRIC 원격 재발: Rueda et al. 2019 Table S5 (DR, TDR 일수). SCAN-B 원격 재발: DRFi (일수).
-실행: python -m module1_recurrence.data.external_cohort
+실행: python -m module1_recurrence.data.scripts.external_cohort
 결과: data/metabric/cohort.csv (HR+/HER2− 1,413명), data/scanb/cohort.csv (HR+/HER2− 추적 코호트)
 """
 import pandas as pd
 
-from module1_recurrence.cohort import RECOMMENDED, standardize_metabric, standardize_scanb
-from module1_recurrence.data.external_fetch import DATA, METABRIC, SCANB
+from module1_recurrence.scripts.cohort import RECOMMENDED, standardize_metabric, standardize_scanb
+from module1_recurrence.data.scripts.external_fetch import DATA, METABRIC, SCANB
 
 TEN_YEARS = 3652.5
 

@@ -188,7 +188,7 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 | **A2** | 코호트 표 고정 | scratchpad 집계 코드를 `cohort.py`로 옮김 (`standardize_metabric`, `standardize_scanb`, 기존 `assign_group` 재사용). Rueda DR/TDR, 재발 기록 완전, 내분비요법만 여부 → `data/{metabric,scanb}/cohort.csv` | **완료** (METABRIC 검사 권고 + 기록 완전 989명 / 원격 재발 179건, SCAN-B 검사 권고 3,095명 / 128건) |
 | **A3** | 유사 RS 예후력 확인 | `pseudo_rs.py`를 METABRIC(마이크로어레이 log2 값) · SCAN-B(log2 FPKM)에 적용 → 10년 원격 재발 C-index, 순위 3구간 KM, 내분비요법만 하위군 | **완료** (`labels/scripts/pseudo_rs_prognosis.py`, 결과 `outputs/module1/a3_*`): 검사 권고 코호트에서 10년 원격 재발 C-index **METABRIC 0.625** (95% CI 0.59–0.66, 154건) · **SCAN-B 0.705** (0.66–0.75, 127건). 10년 재발률 low / intermediate / high = METABRIC 11.6 / 16.8 / 27.5%, SCAN-B 4.2 / 6.1 / 14.4%. 내분비요법만 하위군에서도 high가 갈림 (log-rank p < 0.001). 단, low와 intermediate의 차이는 내분비요법만 하위군에서 작음 (METABRIC 14.5 vs 15.6%, SCAN-B 4.9 vs 5.5%) |
 | **A4** | **단계 3: R 목록** | METABRIC HR+/HER2− 기록 완전 1,251명 (원격 재발 272건). 유전자별 Cox (log 림프절 수 · 크기 · 등급 · 나이 보정, BH FDR) → FDR < 0.05 전부를 R 목록으로 → `outputs/module1/r_genes.csv` (`labels/scripts/r_genes.py`) | **완료**: **493개** (위험 332 / 보호 161). 보정 없이는 2,054개, 임상 보정으로 1,574개 빠짐. Oncotype 유전자는 증식 4개(AURKA · BIRC5 · CCNB1 · MKI67)만 남음. 처음 계획한 Cox-LASSO · elastic net 안정성 선택은 증식 유전자 묶음에서 대표만 남겨(선택 비율 0–24%) 교집합 목적에 맞지 않아 뺐음. SCAN-B 확인: 493개 Cox 점수 C-index 0.691, elastic net 29개 0.649, 무작위 29개 평균 0.612 |
-| **A5** | 비교 기준선 준비 | 증식 점수 (Oncotype 증식 5개), NPI (METABRIC 열 / SCAN-B는 크기 · 림프절 · NHG로 계산), PAM50 ROR (SCAN-B 제공값), 무작위 유전자 세트, SEQUOIA 272개 서명 (Supplementary Data 5 확보 필요) | 같은 환자에게 기준선 점수가 모두 계산됨 |
+| **A5** | 비교 기준선 준비 | 증식 점수 (Oncotype 증식 5개), NPI (METABRIC 열 / SCAN-B는 크기 · 림프절 · NHG로 계산), PAM50 ROR (SCAN-B 제공값), 무작위 유전자 세트, SEQUOIA 272개 서명 (Supplementary Data 5 확보 필요) | **부분 완료** (`scripts/baselines.py`, 결과 `data/{metabric,scanb}/baselines.csv`, `outputs/module1/a5_baselines.json`). 검사 권고 코호트 10년 원격 재발 C-index: METABRIC (989명) 유사 RS 0.625 · 증식 5개 **0.678** · SEQUOIA 0.580 · NPI 0.638 / SCAN-B (3,053명, 점수 모두 있는 환자) 유사 RS **0.702** · 증식 0.663 · SEQUOIA **0.702** · NPI 0.695 · PAM50 ROR 0.655. SEQUOIA는 272개 중 공통 유전자 259개, 계수 × (log2 발현 − 코호트 평균). METABRIC 값이 낮은 것은 TCGA RNA-seq 계수를 마이크로어레이에 그대로 쓴 영향으로 봄. 남은 것: CTS5 (공식 원문 확인), METABRIC ROR (제공값 없음), 무작위 유전자 세트 (C2에서 최종 서명과 같은 개수로) |
 
 ### B. H&E 갈래 (TCGA · CPTAC)
 | # | 작업 | 입력 → 출력 | 완료 기준 · 주의 |
@@ -209,5 +209,5 @@ H&E 단계 평가(TCGA에서 H&E 예측 서명 → PFI, Howard · SEQUOIA 방식
 ## 5. 확인하지 못한 것
 - CPTAC-BRCA의 ER/HER2 상태와 슬라이드 종류 (FFPE / 냉동)
 - 세포 분할 모델 가중치 라이선스 (CellViT, BCSS 학습 모델)
-- SEQUOIA Supplementary Data 5 (272개 유전자 계수)의 공개 여부와 이용 조건
+- ~~SEQUOIA Supplementary Data 5 (272개 유전자 계수)의 공개 여부와 이용 조건~~ → 확보: 논문 MOESM4 엑셀 `Supp. Data 5` 시트 (`data/sequoia/raw/`), 논문 라이선스 CC BY-NC-ND 4.0이라 파일은 저장소에 올리지 않음
 - SCAN-B 폐경 상태 (나이로 근사함)

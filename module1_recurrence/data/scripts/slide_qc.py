@@ -6,7 +6,7 @@ GDC 슬라이드 뷰어용 타일 API(DeepZoom)에서 긴 변 1024픽셀 이하 
 - 펜: 초록 · 파랑 · 검정 펜 픽셀 비율과 마스크(png)를 남긴다 → 타일 단계에서 펜이 지나가는 타일을 뺀다.
 실행: python -m module1_recurrence.data.scripts.slide_qc [--limit N] [--root DIR]
 결과: {root}/qc/slide_qc.csv, {root}/qc/thumbs/*.png, {root}/qc/pen_masks/*.png,
-      {root}/qc/{IHC_suspect,HE_faded,check_thumb,pen}.png (종류별 썸네일 모음)
+      {root}/qc/{IHC_suspect,HE_faded,check_thumb,pen,red_outline,red_remnant,red_tissue_red}.png (종류별 썸네일 모음)
 """
 import argparse
 import io
@@ -20,6 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
+from scipy.ndimage import label
 
 from module1_recurrence.data.scripts.gdc_fetch import API, RAW
 
@@ -83,7 +84,10 @@ def measure(img):
     green = (hue >= 90) & (hue <= 200) & (sat > 60)
     blue = (hue >= 200) & (hue <= 260) & (sat > 110) & (val < 200)
     dark = val < 60
-    pen = green | blue | dark
+    # 진한 빨강: 빨간 펜 잉크와 혈액 · 진한 에오신이 함께 걸린다 → red_kind로 나눈다
+    red = ((hue >= 345) | (hue <= 10)) & (sat > 170) & (val > 80)
+    kind = red_kind(red, sat)
+    pen = green | blue | dark | (red if kind in ("outline", "remnant") else False)
     tissue = (sat > 20) & (val < 235) & ~pen
     n = max(int(tissue.sum()), 1)
     # H&E 조직은 보라~분홍(270–360°, 0–15°), IHC는 헤마톡실린만 있어 청회색(200–270°) + 갈색 DAB
@@ -97,9 +101,32 @@ def measure(img):
         "brown_frac": brown.sum() / n,
         "green_pen_frac": green.mean(),
         "blue_pen_frac": blue.mean(),
+        "red_pen_frac": red.mean(),
+        "red_kind": kind,
         "dark_frac": dark.mean(),
     }
     return stats, pen
+
+
+def red_kind(red, sat):
+    """진한 빨강 픽셀이 무엇인지 나눈다. 빨강이 0.5% 이상인 39장을 눈으로 나눈 결과와 39장 모두 일치하도록 정한 기준.
+
+    - tissue_red: 조직 자체가 빨강 (혈액 · 진한 에오신). 펜 잉크만큼 선명한 픽셀(채도 > 220)이 거의 없음 (≤ 0.02, 펜은 ≥ 0.23)
+    - broken: 빨간 덩어리 하나가 외곽 상자를 꽉 채움 → 썸네일 저장 이상 (TCGA-OL-A5RZ)
+    - outline: 빨강 5% 이상 → 종양을 둘러싼 빨간 펜 선 (6.4–16.7%, 대부분 E9 기관)
+    - remnant: 그 밖 → 지워진 펜 흔적 (≤ 3.9%). 잉크 픽셀만 빼고 영역 표시로는 쓰지 않음
+    """
+    frac = red.mean()
+    if frac < 0.005:
+        return "none"
+    if (red & (sat > 220)).sum() / red.sum() < 0.1:
+        return "tissue_red"
+    lab, n = label(red)
+    sizes = np.bincount(lab.ravel())[1:]
+    ys, xs = np.nonzero(lab == sizes.argmax() + 1)
+    if sizes.max() / red.sum() > 0.9 and sizes.max() / ((np.ptp(xs) + 1) * (np.ptp(ys) + 1)) > 0.9:
+        return "broken"
+    return "outline" if frac >= 0.05 else "remnant"
 
 
 def run_one(row, out):
@@ -156,16 +183,21 @@ def main():
     qc["stain"] = "H&E"
     qc.loc[low_he, "stain"] = "H&E_faded"
     qc.loc[low_he & (qc.brown_frac >= IHC_BROWN), "stain"] = "IHC_suspect"
-    qc.loc[qc.tissue_frac < MIN_TISSUE, "stain"] = "check_thumb"
+    qc.loc[(qc.tissue_frac < MIN_TISSUE) | (qc.red_kind == "broken"), "stain"] = "check_thumb"
     qc.loc[qc.error.notna(), "stain"] = "error"
-    qc["pen"] = (qc.green_pen_frac + qc.blue_pen_frac) > 0.005
+    red_ink = qc.red_kind.isin(["outline", "remnant"])
+    qc["pen"] = (qc.green_pen_frac + qc.blue_pen_frac + qc.red_pen_frac.where(red_ink, 0)) > 0.005
     qc.to_csv(out / "slide_qc.csv", index=False)
 
     for kind in ("IHC_suspect", "H&E_faded", "check_thumb"):
         s = qc[qc.stain == kind].sort_values("he_frac")
         contact_sheet([out / "thumbs" / f"{n}.png" for n in s.slide], out / f"{kind.replace('&', '')}.png")
     contact_sheet([out / "thumbs" / f"{n}.png" for n in qc[qc.pen].slide], out / "pen.png")
-    print(qc.stain.value_counts().to_dict(), "| pen (green+blue > 0.5%)", int(qc.pen.sum()))
+    for kind in ("outline", "remnant", "tissue_red"):
+        s = qc[qc.red_kind == kind].sort_values("red_pen_frac", ascending=False)
+        contact_sheet([out / "thumbs" / f"{n}.png" for n in s.slide], out / f"red_{kind}.png")
+    print(qc.stain.value_counts().to_dict(), "| pen (> 0.5%)", int(qc.pen.sum()),
+          "| red", qc.red_kind.value_counts().drop("none", errors="ignore").to_dict())
     print(qc[qc.stain.isin(["IHC_suspect", "check_thumb", "error"])][["slide", "stain", "he_frac", "brown_frac"]]
           .to_string(index=False))
 

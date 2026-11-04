@@ -36,8 +36,9 @@ def _get(url):
         try:
             with urllib.request.urlopen(url, timeout=60) as r:
                 return r.read()
-        except OSError:
-            if attempt == RETRIES - 1:
+        except OSError as e:
+            # 400 같은 요청 오류는 다시 해도 같으므로 바로 넘긴다
+            if attempt == RETRIES - 1 or (isinstance(e, urllib.error.HTTPError) and e.code < 500):
                 raise
             time.sleep(5 * (attempt + 1))
 
@@ -51,8 +52,19 @@ def pyramid(file_id):
 
 
 def thumbnail(file_id):
-    """DeepZoom 피라미드에서 긴 변이 MAX_SIDE 이하인 가장 큰 단계를 타일로 받아 이어 붙인다."""
+    """긴 변이 MAX_SIDE 이하인 단계부터 받아 보고, GDC가 그 단계를 못 그리면(400) 한 단계씩 낮춘다."""
     w, h, ts, ov, down = pyramid(file_id)
+    for _ in range(3):
+        try:
+            return _stitch(file_id, w, h, ts, ov, down), down
+        except urllib.error.HTTPError as e:
+            if e.code != 400:
+                raise
+            down *= 2
+    raise OSError(f"no renderable level down to 1/{down}")
+
+
+def _stitch(file_id, w, h, ts, ov, down):
     level = math.ceil(math.log2(max(w, h))) - int(math.log2(down))  # 첫 항은 원본 해상도 단계
     lw, lh = math.ceil(w / down), math.ceil(h / down)
     img = Image.new("RGB", (lw, lh), "white")
@@ -61,7 +73,7 @@ def thumbnail(file_id):
             tile = Image.open(io.BytesIO(_get(f"{API}/tile/{file_id}?level={level}&x={tx}&y={ty}"))).convert("RGB")
             # 첫 행 · 열이 아니면 타일 앞쪽에 겹침(overlap) 픽셀이 붙어 있다
             img.paste(tile, (tx * ts - (ov if tx else 0), ty * ts - (ov if ty else 0)))
-    return img, down
+    return img
 
 
 def measure(img):
@@ -94,8 +106,9 @@ def run_one(row, out):
     name = row.file_name.split(".")[0]  # 예: TCGA-A1-A0SB-01Z-00-DX1
     thumb_path = out / "thumbs" / f"{name}.png"
     try:
-        if thumb_path.exists():  # 다시 돌릴 때는 썸네일 대신 메타데이터만 받는다
-            img, down = Image.open(thumb_path).convert("RGB"), pyramid(row.file_id)[4]
+        if thumb_path.exists():  # 다시 돌릴 때는 썸네일 대신 메타데이터만 받아 축소 배율을 되찾는다
+            img = Image.open(thumb_path).convert("RGB")
+            down = 2 ** round(math.log2(pyramid(row.file_id)[0] / img.width))
         else:
             img, down = thumbnail(row.file_id)
             img.save(thumb_path)

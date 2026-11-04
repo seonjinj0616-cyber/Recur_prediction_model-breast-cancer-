@@ -4,7 +4,8 @@
 펜이 지나가는 타일은 빼고(옅은 펜도 분류를 왜곡해서 마스크를 넓혀 씀), IHC 의심 슬라이드는 건너뛴다.
 먼저 data.scripts.slide_qc로 {root}/qc/를 만들고, CellViT 결과를 {root}/cellvit_test/{슬라이드}/에 둔다.
 실행: python -m module1_recurrence.features.scripts.tumor_tiles [--root DIR] [--min_ratio 0.5] [--min_cells 20]
-결과: {root}/tiles/{슬라이드}.csv (타일별 핵 수), {root}/tiles/{슬라이드}.png (확인용), {root}/tiles/summary.csv
+결과: {root}/tiles/{슬라이드}.csv (타일별 핵 수), {root}/tiles/summary.csv,
+      {root}/tiles/{슬라이드}.jpg (왼쪽 썸네일 · 오른쪽 선택 결과: 빨강 종양, 파랑 그 밖 조직, 회색 펜 제외)
 """
 import argparse
 import json
@@ -82,7 +83,11 @@ def overlay(thumb, labels, nx, ny, down, dest):
     a = Image.fromarray(alpha).resize(size, Image.NEAREST)
     base = thumb.copy()
     base.paste(layer, (0, 0), a)
-    base.save(dest)
+    # 왼쪽 원본 썸네일, 오른쪽 선택 결과 (눈으로 비교용)
+    pair = Image.new("RGB", (thumb.width * 2 + 10, thumb.height), "white")
+    pair.paste(thumb, (0, 0))
+    pair.paste(base, (thumb.width + 10, 0))
+    pair.save(dest, quality=90)
 
 
 def process(slide, det_path, qc_row, qc_dir, out, min_ratio, min_cells):
@@ -107,7 +112,7 @@ def process(slide, det_path, qc_row, qc_dir, out, min_ratio, min_cells):
 
     labels = np.full((ny, nx), "", dtype=object)
     labels[tissue], labels[tumor], labels[is_pen & (n > 0)] = "tissue", "tumor", "pen"
-    overlay(thumb, labels, nx, ny, down, out / f"{slide}.png")
+    overlay(thumb, labels, nx, ny, down, out / f"{slide}.jpg")
 
     ty, tx = np.nonzero(n > 0)
     df = pd.DataFrame({"x": tx * TILE, "y": ty * TILE, "n_cells": n[ty, tx],

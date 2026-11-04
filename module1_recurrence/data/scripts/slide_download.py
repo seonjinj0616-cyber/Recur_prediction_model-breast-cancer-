@@ -1,9 +1,9 @@
-"""manifest.csv의 진단 슬라이드(환자당 첫 번째, 보통 DX1)를 받는다. 처음에는 300명부터.
+"""manifest.csv의 진단 슬라이드를 받는다. 기본은 환자당 첫 번째(보통 DX1), --all_slides면 환자의 모든 DX 슬라이드.
 
-디스크가 부족하면 feature 추출 뒤 svs를 지운다. svs나 feature(.h5)가 이미 있는 환자는 건너뛰므로
+디스크가 부족하면 feature 추출 뒤 svs를 지운다. svs나 feature({슬라이드}.h5)가 이미 있는 슬라이드는 건너뛰므로
 "받기 → 추출 → 삭제"를 묶음 단위로 반복할 수 있고, 중간에 끊겨도 다시 실행하면 된다.
 {root}/qc/slide_qc.csv가 있으면 IHC로 판정된 슬라이드는 건너뛴다.
-실행: python -m module1_recurrence.data.scripts.slide_download [--batch N] [--root DIR]
+실행: python -m module1_recurrence.data.scripts.slide_download [--batch N] [--root DIR] [--all_slides]
 결과: {root}/slides/{file_name}.svs
 """
 import argparse
@@ -39,24 +39,29 @@ def fetch(file_id, path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--batch", type=int, default=300, help="아직 처리하지 않은 환자 중 앞에서 N명")
+    ap.add_argument("--batch", type=int, default=300, help="아직 처리하지 않은 슬라이드 중 앞에서 N장")
     ap.add_argument("--root", type=Path, default=RAW.parent, help="manifest.csv가 있는 폴더 (서버: data/sj/tcga)")
+    ap.add_argument("--all_slides", action="store_true", help="환자의 DX 슬라이드 전부 (기본: 첫 번째만)")
     args = ap.parse_args()
 
     slide_dir, feat_dir = args.root / "slides", args.root / "features"
     slide_dir.mkdir(parents=True, exist_ok=True)
 
     m = pd.read_csv(args.root / "manifest.csv").dropna(subset=["slide_file_ids"])
-    # manifest는 슬라이드를 파일 이름 순으로 묶어 두었으므로 첫 번째가 DX1
-    m["file_id"] = m.slide_file_ids.str.split(";").str[0]
-    m["path"] = [slide_dir / n for n in m.slide_file_names.str.split(";").str[0]]
+    m["file_id"], m["file_name"] = m.slide_file_ids.str.split(";"), m.slide_file_names.str.split(";")
+    if args.all_slides:
+        m = m.explode(["file_id", "file_name"])
+    else:  # manifest는 슬라이드를 파일 이름 순으로 묶어 두었으므로 첫 번째가 DX1
+        m["file_id"], m["file_name"] = m.file_id.str[0], m.file_name.str[0]
+    m["path"] = [slide_dir / n for n in m.file_name]
     # slide_qc에서 IHC로 판정한 슬라이드(진단용 H&E가 아님)는 받지 않는다
     qc_path = args.root / "qc" / "slide_qc.csv"
     ihc = set(pd.read_csv(qc_path).query("stain == 'IHC_suspect'").file_id) if qc_path.exists() else set()
     m = m[~m.file_id.isin(ihc)]
-    done = m.patient_id.map(lambda p: (feat_dir / f"{p}.h5").exists())
+    done = m.file_name.map(lambda n: (feat_dir / f"{n.split('.')[0]}.h5").exists())
     todo = m[~done].head(args.batch)
-    print(f"patients {len(m)} (IHC excluded {len(ihc)}) | features done {int(done.sum())} | this batch {len(todo)}")
+    print(f"slides {len(m)} of {m.patient_id.nunique()} patients (IHC excluded {len(ihc)}) "
+          f"| features done {int(done.sum())} | this batch {len(todo)}")
 
     with ThreadPoolExecutor(max_workers=4) as ex:
         results = list(ex.map(fetch, todo.file_id, todo.path))

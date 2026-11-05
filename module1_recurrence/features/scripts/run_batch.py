@@ -6,6 +6,9 @@
 CellViT 결과 중 핵 윤곽 파일(cells.json · cells.geojson, 슬라이드당 수백 MB)은 지우고
 핵 중심 파일(cell_detection.json · .geojson, QuPath 확인용)만 남긴다 (--keep_contours로 유지).
 실행: python -m module1_recurrence.features.scripts.run_batch --root data/sj/tcga --batch 20 --gpu 1 [--all_slides]
+GPU 2장: --shard 0/2 --gpu 0 과 --shard 1/2 --gpu 1 을 따로 띄운다 (이름 순서로 번갈아 나눔, 받기는 --batch 0).
+  --shard로 띄우면 CellViT만 하고 끝난다. 둘 다 끝나면 --shard 없이 한 번 더 실행해 종양 타일 · 특징을 만든다.
+중간에 멈춰도(Ctrl+C) 다시 실행하면 cell_detection.json이 있는 슬라이드는 건너뛴다. 처리 중이던 한 장만 처음부터 다시 한다.
 결과: {root}/slides, {root}/cellvit, {root}/tiles, {root}/features, {root}/logs/{슬라이드}.log
 """
 import argparse
@@ -47,6 +50,7 @@ def main():
     ap.add_argument("--all_slides", action="store_true", help="환자의 DX 슬라이드 전부 (기본: 첫 번째만)")
     ap.add_argument("--cellvit", type=Path, default=CELLVIT, help="cellvit-inference 실행 파일")
     ap.add_argument("--keep_contours", action="store_true", help="CellViT 핵 윤곽 파일을 지우지 않음")
+    ap.add_argument("--shard", default=None, help="i/n: 슬라이드를 n개로 나눠 i번째만 CellViT (예: 0/2). 종양 타일 · 특징은 건너뜀")
     args = ap.parse_args()
 
     root = args.root
@@ -61,7 +65,11 @@ def main():
     qc = pd.read_csv(root / "qc" / "slide_qc.csv").set_index("slide").stain
     done = {d.name.split(".")[0] for d in cell_dir.iterdir() if (d / "cell_detection.json").exists()}
     held = []
-    for svs in sorted((root / "slides").glob("*.svs")):
+    slides = sorted((root / "slides").glob("*.svs"))
+    if args.shard:
+        i, n = map(int, args.shard.split("/"))
+        slides = slides[i::n]
+    for svs in slides:
         slide = svs.name.split(".")[0]
         if slide in done:
             continue
@@ -73,8 +81,11 @@ def main():
         print(f"cellvit {slide} {'ok' if code == 0 else f'FAILED ({code}), see logs/{slide}.log'} {sec / 60:.1f} min",
               flush=True)
 
-    step("features.scripts.tumor_tiles", "--root", root)
-    step("features.scripts.extract", "--root", root, env=env)
+    if args.shard:
+        print(f"shard {args.shard} CellViT done. 다른 shard도 끝나면 --shard 없이 다시 실행해 종양 타일 · 특징을 만든다.")
+    else:
+        step("features.scripts.tumor_tiles", "--root", root)
+        step("features.scripts.extract", "--root", root, env=env)
     if held:
         print("held (원본 확인 필요):", held)
 

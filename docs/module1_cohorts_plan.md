@@ -203,7 +203,7 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 - 종양이 덩어리진 슬라이드에서는 두 방법이 잘 맞음 (Dice 0.76–0.87). CellViT가 종양 안 옅은 부위 · 경계를 조금 더 넓게 잡음.
 - 기질 속에 퍼진 종양에서는 BCSS가 종양을 거의 놓침: A1-A0SE는 병리의가 펜으로 표시한 큰 종양을 BCSS가 239타일만 종양으로 봄.
 - 원인은 기준 차이: BCSS는 **면적** (CellViT 종양 타일 안을 BCSS는 기질 63% · 종양 30%로 봄), CellViT는 **핵 비율** (같은 타일에서 종양 핵 68%). 기질은 핵이 적어 핵 비율로는 종양이 드러남.
-- **결정:** CellViT 기준(종양 핵 비율 ≥ 0.5, 핵 ≥ 20)을 그대로 쓰고 BCSS는 쓰지 않음. 비교 결과 파일 · BCSS 환경 · 비교 코드(`bcss_compare.py`)는 지움. 코드는 git 기록에 있음.
+- **결정:** CellViT 기준(당시 종양 핵 비율 ≥ 0.5, 핵 ≥ 20. 이후 6-1에서 RNA 조각 맞춤으로 바꿈)을 그대로 쓰고 BCSS는 쓰지 않음. 비교 결과 파일 · BCSS 환경 · 비교 코드(`bcss_compare.py`)는 지움. 코드는 git 기록에 있음.
 
 **특징 인코더 (단계 2 입력, 2026-11-05 결정) → ResNet50 기준선 + H-optimus-0 (또는 Hibou-L) 비교**
 
@@ -219,6 +219,11 @@ ImageNet ResNet50은 자연 사진으로 학습해 병리 의미를 직접 배�
 
 - 벤치마크 출처: MINT (arXiv 2603.07895) eva 표, Neidlinger et al. *Nat Biomed Eng* 2025 (19개 모델, H-optimus-0 상위권). 라이선스는 2026-11-05 Hugging Face 모델 페이지 기준.
 - 추출 시간 추정 (실측 아님): ResNet50 510장 약 4–5시간, Hibou-L 약 하루, H-optimus-0 며칠 → 50장으로 속도를 먼저 재고 결정. 타일은 한 번 읽어 두 인코더에 같이 넣음.
+- **선택 방법: 시험 실행** (`features/scripts/encoder_pilot.py`). 처리된 슬라이드 최대 50장에서 RNA 조각 맞춤 타일 · 그 밖의 조직 타일을 각각 300개씩 뽑아 세 인코더에 넣고:
+  1. **속도:** GPU 계산 · 타일 읽기 초당 타일 수 → 510장 시간 추정
+  2. **타일 미니 과제:** CellViT 핵 구성(종양 · 염증 · 기질 비율, log 핵 수)을 ridge로 맞힘, 슬라이드 단위 5-fold R². 정답이 공짜라 타일이 많고 안정적
+  3. **실제 과제 축소판:** 환자별 맞춤 타일 평균 → R 목록 493개 · Oncotype 16개 log2(TPM+1), 환자 5-fold ridge, 유전자별 Pearson r. 신호가 없어도 r 중앙값이 음수로 나오므로 무작위 특징(random)과 비교. 50명이라 방향만 봄
+- **결정 규칙:** H-optimus-0이 510장에 2–3일 안이면 ResNet50과 둘 다 뽑고 최종 선택은 B4 교차검증 (특징 약 10 GB). 너무 느리면 2번에서 Hibou-L이 비슷할 때 Hibou-L. ResNet50은 기준선으로 항상 유지.
 - **두 번째 인코더 특징이 생기기 전에는 슬라이드를 지우지 않음** (지우면 다시 받아야 함).
 
 **슬라이드 QC 결과 (`slide_qc.py`, TCGA-BRCA 진단 슬라이드 1,133장, 2026-11-04)**
@@ -284,9 +289,9 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 | # | 작업 | 입력 → 출력 | 완료 기준 · 주의 |
 |---|---|---|---|
 | **B1** | 슬라이드 받기 · QC | GPU 서버(`ssh gpu`, `data/sj/tcga/`)에 HR+/HER2− 514명 DX1 받기 (`slide_download.py`), 썸네일 QC (`slide_qc.py`) | **진행 중** (2026-11-05): 514장 중 510장 받음, 실패분 재시도 중. 1,047명 확장 · 나머지 532명 RNA는 필요할 때 |
-| **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 (`tumor_tiles.py`) | **기준 확정** (6장 규칙). 514장 처리 진행 중 (GPU 1장 약 7일) |
+| **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 (`tumor_tiles.py`) | **기준 확정** (6장 규칙, 6-1 RNA 조각 맞춤). 514장 처리 진행 중 (GPU 1장 약 7일) |
 | **B3** | 특징 추출 | `features/scripts/extract.py`: ImageNet ResNet50 (layer3 + 평균 풀링, 1024차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 서버 시험: 조직 타일 19,754개 31초 (RTX 5090). 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고). **남은 것:** H-optimus-0 (또는 Hibou-L) 특징 추가 (단계 1 특징 인코더 참고) → **두 인코더 특징이 다 생긴 슬라이드만 지움** |
-| **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | 종양 타일 / 전체 타일 두 버전 결과 비교 |
+| **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | RNA 조각 맞춤 / 고정 기준 / 전체 타일 세 버전 결과 비교 (`tile_sets.select`) |
 
 ### C. 합치기
 | # | 작업 | 완료 기준 |
@@ -315,15 +320,33 @@ H&E 단계 평가(TCGA에서 H&E 예측 서명 → PFI, Howard · SEQUOIA 방식
 | 타일 격자 | 128 µm 정사각형 (20배 256픽셀). 원본 픽셀 = round(128 / mpp) (0.252 mpp → 508, 0.2325 mpp → 551). 원점 (0, 0)부터 겹침 없이 | `tumor_tiles.py` |
 | 펜 제외 | 초록 · 파랑 · 검정 펜 + 빨간 펜 선 · 흔적 (조직이 빨간 경우 제외)을 썸네일에서 5×5 최댓값 필터로 넓힌(사방 2픽셀) 마스크가 타일의 1% 넘게 겹치면 제외 | `slide_qc.py`, `tumor_tiles.py` |
 | 조직 타일 | 핵 ≥ 20 & 펜 아님 | `tumor_tiles.py` |
-| 종양 타일 | 조직 타일 & Neoplastic 핵 / 전체 핵 ≥ 0.5 | `tumor_tiles.py` |
+| 종양 타일 (고정 기준) | 조직 타일 & Neoplastic 핵 / 전체 핵 ≥ **0.7** & Neoplastic 핵 ≥ **50** (2026-11-05 변경, 이전 0.5 · 개수 기준 없음). 0.7은 RNA 조각의 종양 핵 % (중앙값 80, 25% 70)에 맞춤, 50개는 세포가 듬성한 섬유질 위주 타일 제외 | `tumor_tiles.py`, `tile_sets.py` |
+| 종양 타일 (RNA 조각 맞춤) | 종양 핵 ≥ 50인 조직 타일을 종양 핵 비율 높은 순으로 담다가, 담은 타일 전체의 종양 핵 비율(종양 핵 합 / 전체 핵 합)이 **환자의 RNA 조각 종양 핵 %**까지 내려오면 멈춤. 예측 때(새 환자는 값 없음)는 코호트 중앙값 80% | `rna_purity.py`, `tile_sets.py` |
 | 보조 확인 | 큰 펜 원(볼록 껍질) 안쪽 종양 타일 비율, 썸네일 · 선택 결과 비교 JPG | `tumor_tiles.py` |
 | 특징 | 조직 타일 전부를 원본에서 읽어 224×224로 줄여 ImageNet ResNet50 (IMAGENET1K_V1) layer3 + 평균 풀링 → 1024차원 float16 | `extract.py` |
 | 저장 | 슬라이드마다 `features/{슬라이드}.h5`: features, coords [x, y], tumor_tile, tumor_ratio, n_cells, 속성 tile · mpp · encoder | `extract.py` |
-| 학습 때 고르는 것 | 종양 타일만 / 조직 타일 전부 × DX1만 / 환자 슬라이드 전부 (환자 단위로 이어 붙임) | B4 |
+| 학습 때 고르는 것 | RNA 조각 맞춤 / 고정 기준 / 조직 타일 전부 × DX1만 / 환자 슬라이드 전부 (환자 단위로 이어 붙인 뒤 고름). h5의 `tumor_tile`은 추출 당시 기준(0.5)이라 쓰지 않고 `tumor_ratio` · `n_cells`로 다시 판정 | `tile_sets.select` (B4) |
 | 두 번째 인코더 | H-optimus-0 (또는 Hibou-L) 특징을 같은 타일로 추가 (단계 1 특징 인코더 참고) | 예정 |
 | 슬라이드 삭제 | 두 인코더 특징이 다 생긴 슬라이드만 | 서버에서 수동 |
 
 색 정규화는 하지 않음 (바랜 H&E에서도 CellViT 핵 검출 · 종양 판정이 정상 H&E와 비슷했음).
+
+### 6-1. 종양 타일 기준을 RNA 조각에 맞춘 이유 (2026-11-05)
+- **RNA와 사진은 다른 조직 조각에서 나왔습니다.** TCGA는 냉동 조각에서 RNA를 뽑고, 그 조각의 위(TS) · 아래(BS) 단면을 병리의사가 판독해 종양 핵 % 등을 남겼습니다. 진단 슬라이드(DX, 파라핀)는 다른 조각이고 이 값이 없습니다 (1,130장 중 1장).
+- **RNA 조각 판독값은 우리 515명 모두에게 있습니다** (TCGA-BRCA 전체 1,097 / 1,098명). TS만 304명, TS+BS 189명, BS만 19명, MS만 3명. 종양 핵 평균 76.6% (중앙값 80, 60% 미만 20명), 기질 22.2%, 정상 4.6%, 림프구 5.6%. 눈으로 어림한 5% 단위라 TS와 BS가 평균 8.3%p 다르고 189명 중 24명은 20%p 이상 다름 → ±10%p 정도로 맞추면 충분.
+- **RNA는 세포에서 나오므로 면적이 아니라 핵 비율로 맞춥니다.** TCGA의 시료 기준(종양 핵 ≥ 60%)도 같은 지표.
+- **DX 슬라이드 전체는 RNA 조각보다 종양이 훨씬 적습니다.** 처리된 15장에서 CellViT로 센 종양 핵 비율과 RNA 조각 값의 평균 차이:
+
+| 타일 범위 | RNA 조각과의 평균 차이 (%p) |
+|---|---|
+| 조직 타일 전부 | 33.2 (DX 평균 약 45% vs RNA 조각 약 77%) |
+| 고정 기준 (≥ 0.7 & 종양 핵 ≥ 50) | 11.0 (항상 80–92%로 RNA 조각보다 높음) |
+| **RNA 조각 맞춤** | **5.6** (15명 중 9명은 목표값과 같음. 6명은 종양 핵 ≥ 50 후보를 다 담아도 목표보다 높아 후보 전부) |
+
+- **타일마다 "비율 ≥ 목표"로 자르면 안 되는 이유:** 고른 타일 전체의 평균은 목표보다 높아짐. 평균을 직접 맞춰야 함.
+- **모든 타일에 가중치만 주면 안 되는 이유:** 평균 숫자는 맞출 수 있지만, 멀리 떨어진 정상 조직 · 지방 경계가 섞임. RNA 조각의 비종양 부분은 주로 종양 사이 기질. 비율 높은 순으로 담으면 종양 중심에서 경계 쪽으로 넓혀 가는 macrodissection과 비슷해짐.
+- 세 버전(RNA 조각 맞춤 · 고정 기준 · 전체 조직)을 B4에서 같이 돌려 비교. CellViT와 특징은 다시 뽑지 않음.
+- CellViT가 센 핵 비율과 병리의사의 어림값은 같은 자가 아니므로, 위 비교는 방향을 보는 용도. 대량 처리 후 515명으로 다시 확인.
 
 ---
 
@@ -348,6 +371,9 @@ SEQUOIA 파일은 `baselines.py` 맨 위 설명의 주소에서 받아 `data/seq
 | 2 | 이 PC | `python -m module1_recurrence.data.scripts.slide_qc` → `scp -r data/tcga/qc gpu:~/team_project_final/data/sj/tcga/` | 썸네일 · 펜 마스크 · `slide_qc.csv` |
 | 3 | 서버 | `python -m module1_recurrence.data.scripts.slide_download --root data/sj/tcga --batch 600` | `slides/` |
 | 4 | 서버 | `python -m module1_recurrence.features.scripts.run_batch --root data/sj/tcga --batch 0 --gpu 1` (반복) | `cellvit/`, `tiles/`, `features/` |
+| 5 | 이 PC | `python -m module1_recurrence.data.scripts.rna_purity` | `data/tcga/rna_purity.csv` (환자별 RNA 조각 구성) |
+| 6 | 서버 | 기준을 바꿨을 때 `python -m module1_recurrence.features.scripts.tumor_tiles --root data/sj/tcga --redo` | `tiles/` CSV · JPG 다시 계산 (특징은 그대로) |
+| 7 | 이 PC → 서버 | `python -m module1_recurrence.features.scripts.encoder_pilot --make_expr` → `data/tcga/{rna_purity,expr_pilot}.csv`, `outputs/module1/r_genes.csv`를 서버 `data/sj/tcga/`로 복사 → 서버에서 `...encoder_pilot --root data/sj/tcga` | `pilot/encoder_pilot.json` (인코더 선택) |
 
 ---
 

@@ -5,7 +5,7 @@
 펜이 지나가는 타일은 빼고(옅은 펜도 분류를 왜곡해서 마스크를 넓혀 씀), IHC 의심 슬라이드는 건너뛴다.
 먼저 data.scripts.slide_qc로 {root}/qc/를 만들고, CellViT 결과를 {root}/cellvit/{슬라이드}/에 둔다.
 이미 CSV가 있는 슬라이드는 건너뛴다 (--redo로 다시 계산).
-실행: python -m module1_recurrence.features.scripts.tumor_tiles [--root DIR] [--min_ratio 0.5] [--min_cells 20] [--redo]
+실행: python -m module1_recurrence.features.scripts.tumor_tiles [--root DIR] [--min_ratio 0.7] [--min_neoplastic 50] [--min_cells 20] [--redo]
 결과: {root}/tiles/{슬라이드}.csv (타일별 핵 수), {root}/tiles/summary.csv,
       {root}/tiles/{슬라이드}.jpg (왼쪽 썸네일 · 오른쪽 선택 결과: 빨강 종양, 파랑 그 밖 조직, 회색 펜 제외)
 """
@@ -21,6 +21,7 @@ from scipy.ndimage import label
 from scipy.spatial import ConvexHull
 
 from module1_recurrence.data.scripts.gdc_fetch import RAW
+from module1_recurrence.features.scripts.tile_sets import MIN_NEOPLASTIC, MIN_RATIO
 
 TILE_UM = 128  # 20배(0.5 mpp) 256픽셀
 TYPES = {1: "neoplastic", 2: "inflammatory", 3: "connective", 4: "dead", 5: "epithelial"}
@@ -93,7 +94,7 @@ def overlay(thumb, labels, nx, ny, down, tile, dest):
     pair.save(dest, quality=90)
 
 
-def process(slide, det_path, qc_row, qc_dir, out, min_ratio, min_cells):
+def process(slide, det_path, qc_row, qc_dir, out, min_ratio, min_neoplastic, min_cells):
     t0 = time.time()
     down = qc_row.downsample
     thumb = Image.open(qc_dir / "thumbs" / f"{slide}.png").convert("RGB")
@@ -111,7 +112,7 @@ def process(slide, det_path, qc_row, qc_dir, out, min_ratio, min_cells):
     ratio = np.divide(counts[..., 1], n, out=np.zeros(n.shape), where=n > 0)
     is_pen = pen_frac > PEN_MAX
     tissue = (n >= min_cells) & ~is_pen
-    tumor = tissue & (ratio >= min_ratio)
+    tumor = tissue & (ratio >= min_ratio) & (counts[..., 1] >= min_neoplastic)
 
     labels = np.full((ny, nx), "", dtype=object)
     labels[tissue], labels[tumor], labels[is_pen & (n > 0)] = "tissue", "tumor", "pen"
@@ -134,7 +135,8 @@ def process(slide, det_path, qc_row, qc_dir, out, min_ratio, min_cells):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, default=RAW.parent, help="qc/와 cellvit_test/가 있는 폴더 (서버: data/sj/tcga)")
-    ap.add_argument("--min_ratio", type=float, default=0.5, help="종양 타일 기준: Neoplastic / 전체 핵")
+    ap.add_argument("--min_ratio", type=float, default=MIN_RATIO, help="종양 타일 기준: Neoplastic / 전체 핵")
+    ap.add_argument("--min_neoplastic", type=int, default=MIN_NEOPLASTIC, help="종양 타일 기준: 타일 안 최소 Neoplastic 핵 수 (섬유질 위주 타일 제외)")
     ap.add_argument("--min_cells", type=int, default=20, help="조직 타일 기준: 타일 안 최소 핵 수")
     ap.add_argument("--redo", action="store_true", help="CSV가 있어도 다시 계산 (기준값을 바꿨을 때)")
     args = ap.parse_args()
@@ -155,7 +157,7 @@ def main():
             rows.append({"slide": slide, "stain": row.stain})
             print(slide, "skip (IHC suspect)")
             continue
-        r = process(slide, det, row, qc_dir, out, args.min_ratio, args.min_cells)
+        r = process(slide, det, row, qc_dir, out, args.min_ratio, args.min_neoplastic, args.min_cells)
         rows.append(r)
         print(r)
 

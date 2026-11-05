@@ -1,7 +1,7 @@
 # 모듈 1 재발 검증용 보완 데이터 조사
 
 작성일: 2026-10-30
-관련 문서: `docs/research_datasets_models.md` (0. 데이터 선정 기준)
+관련 문서: `docs/research_datasets_models.md` (0. 데이터 선정 기준), `docs/module1_cohorts_plan.md` (모듈 1 계획 · 진행)
 
 ---
 

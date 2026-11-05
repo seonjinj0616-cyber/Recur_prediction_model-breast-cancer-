@@ -1,7 +1,7 @@
 # 모듈 1 (H&E 기반 원격 재발 위험) — 코호트 · 비교 모델 · 개발 단계
 
-작성일: 2026-10-30
-관련 문서: `docs/recurrence_validation_data.md`
+작성일: 2026-10-30 · 수정: 2026-11-05 (진행 정리 문서 `module1_progress_summary.md`를 이 문서로 합침: 6장 처리 규칙, 7장 실행 순서, 8장 용어)
+관련 문서: `docs/recurrence_validation_data.md` (외부 코호트 조사), `docs/research_datasets_models.md` (데이터 선정 기준 · 배경)
 
 모듈 목표: **H&E에서 읽을 수 있으면서 원격 재발과 관련된 유전자**로 재발 위험을 계산하고, Oncotype DX 검사 대상 중 **임상적으로 놓치기 쉬운 고위험 환자에게 검사를 권고하는 근거**를 준다. (Oncotype 대체가 아님)
 
@@ -186,6 +186,25 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 - 처리 시간은 패치 수보다 빠르게 늘어남 (후처리). 515장은 GPU 2장으로도 며칠 단위, 큰 슬라이드는 메모리 45 GB라 동시 실행 개수 확인 필요.
 - 초록 펜은 대부분 종양 위치 표시 → 선택 기준이 아니라 **판정 확인용 보조 근거**로만 사용.
 
+**종양 범위 지정: CellViT vs BCSS 비교 (2026-11-05) → CellViT 사용, BCSS 사용 안 함**
+
+`features/scripts/bcss_compare.py`: TIAToolbox `fcn_resnet50_unet-bcss` (BCSS로 학습한 조직 영역 분할, 가중치 CC0)를 같은 128 µm 타일 격자에서 돌려
+(256 µm 창 → 0.25 mpp 1024픽셀, 가운데 512픽셀 출력 = 타일 하나) 타일별 Tumour 면적 비율 ≥ 0.5를 BCSS 종양 타일로 보고, CellViT 종양 타일(종양 핵 비율 ≥ 0.5, 핵 ≥ 20)과 비교.
+
+| 슬라이드 | 특징 | CellViT 종양 | BCSS 종양 | 일치율 | kappa | Dice |
+|---|---|---|---|---|---|---|
+| TCGA-5T-A9QA | 깨끗함, 종양 덩어리 | 12,680 | 10,454 | 0.85 | 0.69 | 0.87 |
+| TCGA-A1-A0SB | 펜, 종양 덩어리 | 1,374 | 968 | 0.84 | 0.64 | 0.76 |
+| TCGA-A8-A0AD | 바랜 H&E | 501 | 752 | 0.80 | 0.60 | 0.77 |
+| TCGA-A8-A096 | 가장 바랜 H&E | 437 | 337 | 0.77 | 0.49 | 0.66 |
+| TCGA-A1-A0SD | 기질 속에 퍼진 종양 | 653 | 171 | 0.85 | 0.30 | 0.35 |
+| TCGA-A1-A0SE | 기질 속에 퍼진 큰 종양 (초록 펜 표시) | 2,191 | 239 | 0.81 | 0.16 | 0.19 |
+
+- 종양이 덩어리진 슬라이드에서는 두 방법이 잘 맞음 (Dice 0.76–0.87). CellViT가 종양 안 옅은 부위 · 경계를 조금 더 넓게 잡음.
+- 기질 속에 퍼진 종양에서는 BCSS가 종양을 거의 놓침: A1-A0SE는 병리의가 펜으로 표시한 큰 종양을 BCSS가 239타일만 종양으로 봄.
+- 원인은 기준 차이: BCSS는 **면적** (CellViT 종양 타일 안을 BCSS는 기질 63% · 종양 30%로 봄), CellViT는 **핵 비율** (같은 타일에서 종양 핵 68%). 기질은 핵이 적어 핵 비율로는 종양이 드러남.
+- **결정:** CellViT 기준(종양 핵 비율 ≥ 0.5, 핵 ≥ 20)을 그대로 쓰고 BCSS는 쓰지 않음. 비교 결과 파일 · BCSS 환경은 지우고, 비교 코드(`bcss_compare.py`)는 기록으로 남김.
+
 **슬라이드 QC 결과 (`slide_qc.py`, TCGA-BRCA 진단 슬라이드 1,133장, 2026-11-04)**
 
 | 판정 | 전체 | 1,047명 | 515명 | 처리 |
@@ -240,9 +259,9 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 ### B. H&E 갈래 (TCGA · CPTAC)
 | # | 작업 | 입력 → 출력 | 완료 기준 · 주의 |
 |---|---|---|---|
-| **B1** | TCGA 데이터 확장 | 여성 + 슬라이드 + RNA 1,047명으로 manifest 확장, 나머지 532명 RNA 받기 | **저장 공간**: 환자당 슬라이드 1장만 받아도 약 1.09 TB, 남은 공간 67 GB → `slide_download.py`처럼 **받기 → 특징 추출 → 삭제**를 묶음 단위로 반복하거나 외장 저장소 확보 |
-| **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 | 기준값은 분포를 보고 정한 뒤 고정. 전체 조직 타일 버전도 함께 저장 |
-| **B3** | 특징 추출 | `features/scripts/extract.py`: ImageNet ResNet50 (layer3 + 평균 풀링, 1024차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 서버 시험: 조직 타일 19,754개 31초 (RTX 5090). **슬라이드는 종양 범위 지정 방법 비교 (CellViT vs BCSS) 뒤에 지울지 정함** |
+| **B1** | 슬라이드 받기 · QC | GPU 서버(`ssh gpu`, `data/sj/tcga/`)에 HR+/HER2− 514명 DX1 받기 (`slide_download.py`), 썸네일 QC (`slide_qc.py`) | **진행 중** (2026-11-05): 514장 중 510장 받음, 실패분 재시도 중. 1,047명 확장 · 나머지 532명 RNA는 필요할 때 |
+| **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 (`tumor_tiles.py`) | **기준 확정** (6장 규칙). 514장 처리 진행 중 (GPU 1장 약 7일) |
+| **B3** | 특징 추출 | `features/scripts/extract.py`: ImageNet ResNet50 (layer3 + 평균 풀링, 1024차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 서버 시험: 조직 타일 19,754개 31초 (RTX 5090). 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고) → **특징 `.h5`가 생긴 슬라이드는 지워도 됨** |
 | **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | 종양 타일 / 전체 타일 두 버전 결과 비교 |
 
 ### C. 합치기
@@ -255,7 +274,67 @@ H&E 단계 평가(TCGA에서 H&E 예측 서명 → PFI, Howard · SEQUOIA 방식
 
 ## 5. 확인하지 못한 것
 - CPTAC-BRCA의 ER/HER2 상태와 슬라이드 종류 (FFPE / 냉동)
-- 바랜 H&E (H&E_faded) 슬라이드에서 CellViT 판정이 괜찮은지
-- 썸네일이 깨지거나 API가 실패한 16장의 원본 상태
+- 썸네일이 깨지거나(check_thumb 6) 타일 API가 실패한(error 5) 11장의 원본 상태 → `run_batch`가 CellViT를 돌리지 않고 목록만 출력
+- 조직 접힘 · 연속 절편 판정 (접힘은 종양 핵도 진해서 단순 진하기 마스크는 종양을 지울 위험 → 보류)
 - ~~SEQUOIA Supplementary Data 5 (272개 유전자 계수)의 공개 여부와 이용 조건~~ → 확보: 논문 MOESM4 엑셀 `Supp. Data 5` 시트 (`data/sequoia/raw/`), 논문 라이선스 CC BY-NC-ND 4.0이라 파일은 저장소에 올리지 않음
 - SCAN-B 폐경 상태 (나이로 근사함)
+
+---
+
+## 6. B 갈래 처리 규칙 (종양 타일 · 특징 추출, 2026-11-05 확정)
+
+| 단계 | 규칙 | 코드 |
+|---|---|---|
+| 대상 슬라이드 | HR+/HER2− manifest 환자의 첫 진단 슬라이드(DX1). `--all_slides`면 환자의 DX 전부 | `slide_download.py` |
+| 슬라이드 제외 | QC `IHC_suspect` (TCGA-5L-AAT0) 받지 않음. `check_thumb` · `error` · QC 없음은 CellViT 보류 (원본 확인) | `slide_qc.py`, `run_batch.py` |
+| 세포 분류 | CellViT-SAM-H, PanNuke 5종. 결과는 핵 중심 · 종류만 남김 (`cell_detection.json`) | `run_batch.py` |
+| 타일 격자 | 128 µm 정사각형 (20배 256픽셀). 원본 픽셀 = round(128 / mpp) (0.252 mpp → 508, 0.2325 mpp → 551). 원점 (0, 0)부터 겹침 없이 | `tumor_tiles.py` |
+| 펜 제외 | 초록 · 파랑 · 검정 펜 + 빨간 펜 선 · 흔적 (조직이 빨간 경우 제외)을 썸네일에서 5×5 최댓값 필터로 넓힌(사방 2픽셀) 마스크가 타일의 1% 넘게 겹치면 제외 | `slide_qc.py`, `tumor_tiles.py` |
+| 조직 타일 | 핵 ≥ 20 & 펜 아님 | `tumor_tiles.py` |
+| 종양 타일 | 조직 타일 & Neoplastic 핵 / 전체 핵 ≥ 0.5 | `tumor_tiles.py` |
+| 보조 확인 | 큰 펜 원(볼록 껍질) 안쪽 종양 타일 비율, 썸네일 · 선택 결과 비교 JPG | `tumor_tiles.py` |
+| 특징 | 조직 타일 전부를 원본에서 읽어 224×224로 줄여 ImageNet ResNet50 (IMAGENET1K_V1) layer3 + 평균 풀링 → 1024차원 float16 | `extract.py` |
+| 저장 | 슬라이드마다 `features/{슬라이드}.h5`: features, coords [x, y], tumor_tile, tumor_ratio, n_cells, 속성 tile · mpp · encoder | `extract.py` |
+| 학습 때 고르는 것 | 종양 타일만 / 조직 타일 전부 × DX1만 / 환자 슬라이드 전부 (환자 단위로 이어 붙임) | B4 |
+| 슬라이드 삭제 | `.h5`가 생긴 슬라이드만 | 서버에서 수동 |
+
+색 정규화는 하지 않음 (바랜 H&E에서도 CellViT 핵 검출 · 종양 판정이 정상 H&E와 비슷했음).
+
+---
+
+## 7. 실행 순서 (conda `team_project`, 프로젝트 폴더에서)
+
+**A. RNA 갈래 (이 PC)**
+| 순서 | 명령 | 결과 |
+|---|---|---|
+| 1 | `python -m module1_recurrence.data.scripts.external_fetch --expression` | METABRIC · SCAN-B 원본 |
+| 2 | `python -m module1_recurrence.data.scripts.external_cohort` | `data/{metabric,scanb}/cohort.csv` |
+| 3 | `python -m module1_recurrence.data.scripts.expression` | `data/{metabric,scanb}/expr_hr_her2neg.parquet` |
+| 4 | `python -m module1_recurrence.labels.scripts.pseudo_rs_prognosis` | A3: `data/*/pseudo_rs.csv`, `outputs/module1/a3_*` |
+| 5 | `python -m module1_recurrence.labels.scripts.r_genes` | A4: `outputs/module1/r_genes.csv` (R 목록), `r_gene_cox_all.csv` |
+| 6 | `python -m module1_recurrence.scripts.baselines` | A5: `data/*/baselines.csv`, `outputs/module1/a5_baselines.json` |
+
+SEQUOIA 파일은 `baselines.py` 맨 위 설명의 주소에서 받아 `data/sequoia/raw/`에 둔다.
+
+**B. H&E 갈래**
+| 순서 | 어디서 | 명령 | 결과 |
+|---|---|---|---|
+| 1 | 이 PC | `python -m module1_recurrence.data.scripts.gdc_fetch` → `...data.scripts.manifest` | `data/tcga/raw/`, `manifest.csv` |
+| 2 | 이 PC | `python -m module1_recurrence.data.scripts.slide_qc` → `scp -r data/tcga/qc gpu:~/team_project_final/data/sj/tcga/` | 썸네일 · 펜 마스크 · `slide_qc.csv` |
+| 3 | 서버 | `python -m module1_recurrence.data.scripts.slide_download --root data/sj/tcga --batch 600` | `slides/` |
+| 4 | 서버 | `python -m module1_recurrence.features.scripts.run_batch --root data/sj/tcga --batch 0 --gpu 1` (반복) | `cellvit/`, `tiles/`, `features/` |
+
+---
+
+## 8. 용어
+
+| 용어 | 뜻 |
+|---|---|
+| **Cox 모델** | 사건(재발)이 언제 일어나는지를 다루는 회귀. 추적이 끝난 환자도 "그때까지는 재발 없음"으로 씀 |
+| **위험비 (HR)** | 값이 1 단위 오를 때 재발 위험의 배수. 여기서는 유전자 발현 1 표준편차당 |
+| **임상 보정** | 림프절 · 크기 · 등급 · 나이를 고정한 상태에서도 유전자가 추가로 연관되는지 봄 |
+| **FDR** | 고른 목록 중 가짜 발견의 비율. FDR < 0.05면 493개 중 가짜는 평균 약 25개 이하 |
+| **C-index** | 두 환자 중 먼저 재발한 환자에게 더 높은 점수를 줬을 확률. 0.5는 무작위, 0.6–0.7은 유전자 서명 수준 |
+| **무작위 유전자 기준선** | 유방암에서는 아무 유전자나 골라도 증식과 연관돼 C-index 약 0.61이 나옴. 이 값을 넘어야 의미 있음 |
+| **PQ · mPQ** | 핵 분할 지표. 탐지 F1 × 맞힌 핵의 평균 IoU (0–1). mPQ는 세포 종류별 PQ 평균 |
+| **종양 타일** | 128 µm 타일 중 CellViT가 찾은 핵의 절반 이상이 Neoplastic인 타일 (6장) |

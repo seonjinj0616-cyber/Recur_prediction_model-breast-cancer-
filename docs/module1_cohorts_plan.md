@@ -188,7 +188,7 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 
 **종양 범위 지정: CellViT vs BCSS 비교 (2026-11-05) → CellViT 사용, BCSS 사용 안 함**
 
-`features/scripts/bcss_compare.py`: TIAToolbox `fcn_resnet50_unet-bcss` (BCSS로 학습한 조직 영역 분할, 가중치 CC0)를 같은 128 µm 타일 격자에서 돌려
+비교 코드(`features/scripts/bcss_compare.py`, 결정 후 삭제 · git 기록에 있음): TIAToolbox `fcn_resnet50_unet-bcss` (BCSS로 학습한 조직 영역 분할, 가중치 CC0)를 같은 128 µm 타일 격자에서 돌려
 (256 µm 창 → 0.25 mpp 1024픽셀, 가운데 512픽셀 출력 = 타일 하나) 타일별 Tumour 면적 비율 ≥ 0.5를 BCSS 종양 타일로 보고, CellViT 종양 타일(종양 핵 비율 ≥ 0.5, 핵 ≥ 20)과 비교.
 
 | 슬라이드 | 특징 | CellViT 종양 | BCSS 종양 | 일치율 | kappa | Dice |
@@ -203,7 +203,23 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 - 종양이 덩어리진 슬라이드에서는 두 방법이 잘 맞음 (Dice 0.76–0.87). CellViT가 종양 안 옅은 부위 · 경계를 조금 더 넓게 잡음.
 - 기질 속에 퍼진 종양에서는 BCSS가 종양을 거의 놓침: A1-A0SE는 병리의가 펜으로 표시한 큰 종양을 BCSS가 239타일만 종양으로 봄.
 - 원인은 기준 차이: BCSS는 **면적** (CellViT 종양 타일 안을 BCSS는 기질 63% · 종양 30%로 봄), CellViT는 **핵 비율** (같은 타일에서 종양 핵 68%). 기질은 핵이 적어 핵 비율로는 종양이 드러남.
-- **결정:** CellViT 기준(종양 핵 비율 ≥ 0.5, 핵 ≥ 20)을 그대로 쓰고 BCSS는 쓰지 않음. 비교 결과 파일 · BCSS 환경은 지우고, 비교 코드(`bcss_compare.py`)는 기록으로 남김.
+- **결정:** CellViT 기준(종양 핵 비율 ≥ 0.5, 핵 ≥ 20)을 그대로 쓰고 BCSS는 쓰지 않음. 비교 결과 파일 · BCSS 환경 · 비교 코드(`bcss_compare.py`)는 지움. 코드는 git 기록에 있음.
+
+**특징 인코더 (단계 2 입력, 2026-11-05 결정) → ResNet50 기준선 + H-optimus-0 (또는 Hibou-L) 비교**
+
+ImageNet ResNet50은 자연 사진으로 학습해 병리 의미를 직접 배우지 않았음. 라이선스 기준(승인 없이 받기, 특징 공개 가능)을 지키는 병리 전용 모델을 하나 더 뽑아 같은 타일 · 같은 fold로 비교.
+
+| 모델 | 구조 · 차원 | 학습 데이터 | 라이선스 · 받기 | 벤치마크 (eva 9과제 평균) | 판단 |
+|---|---|---|---|---|---|
+| ImageNet ResNet50 | layer3 + 평균 풀링, 1024 | ImageNet | BSD, torchvision | — | **기준선** (현재 `extract.py`) |
+| **H-optimus-0** (Bioptimus) | ViT-g (약 11억), 1536 | 자체 50만 장 이상 | Apache 2.0, HF 로그인 + 연락처 동의 | 0.793 | **1순위**. 느림 |
+| **Hibou-L** (HistAI) | ViT-L | 자체 100만 장 이상 | Apache 2.0 (`cellvit-hibou-l` 등 파생은 비상업) | 0.777 | H-optimus-0이 너무 느리면 대신 |
+| Phikon / Phikon-v2 (Owkin) | ViT-B / ViT-L | **TCGA** | Owkin 비상업 | 0.753 | 제외: 비상업 + TCGA 평가 시 누수 |
+| CTransPath | Swin-T, 768 | **TCGA** + PAIP | GPL-3.0 + 비상업 학술 문구 | 최신 모델보다 낮음 | 제외: 같은 누수 · 옛 `timm` 필요 |
+
+- 벤치마크 출처: MINT (arXiv 2603.07895) eva 표, Neidlinger et al. *Nat Biomed Eng* 2025 (19개 모델, H-optimus-0 상위권). 라이선스는 2026-11-05 Hugging Face 모델 페이지 기준.
+- 추출 시간 추정 (실측 아님): ResNet50 510장 약 4–5시간, Hibou-L 약 하루, H-optimus-0 며칠 → 50장으로 속도를 먼저 재고 결정. 타일은 한 번 읽어 두 인코더에 같이 넣음.
+- **두 번째 인코더 특징이 생기기 전에는 슬라이드를 지우지 않음** (지우면 다시 받아야 함).
 
 **슬라이드 QC 결과 (`slide_qc.py`, TCGA-BRCA 진단 슬라이드 1,133장, 2026-11-04)**
 
@@ -261,7 +277,7 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 |---|---|---|---|
 | **B1** | 슬라이드 받기 · QC | GPU 서버(`ssh gpu`, `data/sj/tcga/`)에 HR+/HER2− 514명 DX1 받기 (`slide_download.py`), 썸네일 QC (`slide_qc.py`) | **진행 중** (2026-11-05): 514장 중 510장 받음, 실패분 재시도 중. 1,047명 확장 · 나머지 532명 RNA는 필요할 때 |
 | **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 (`tumor_tiles.py`) | **기준 확정** (6장 규칙). 514장 처리 진행 중 (GPU 1장 약 7일) |
-| **B3** | 특징 추출 | `features/scripts/extract.py`: ImageNet ResNet50 (layer3 + 평균 풀링, 1024차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 서버 시험: 조직 타일 19,754개 31초 (RTX 5090). 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고) → **특징 `.h5`가 생긴 슬라이드는 지워도 됨** |
+| **B3** | 특징 추출 | `features/scripts/extract.py`: ImageNet ResNet50 (layer3 + 평균 풀링, 1024차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 서버 시험: 조직 타일 19,754개 31초 (RTX 5090). 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고). **남은 것:** H-optimus-0 (또는 Hibou-L) 특징 추가 (단계 1 특징 인코더 참고) → **두 인코더 특징이 다 생긴 슬라이드만 지움** |
 | **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | 종양 타일 / 전체 타일 두 버전 결과 비교 |
 
 ### C. 합치기
@@ -296,7 +312,8 @@ H&E 단계 평가(TCGA에서 H&E 예측 서명 → PFI, Howard · SEQUOIA 방식
 | 특징 | 조직 타일 전부를 원본에서 읽어 224×224로 줄여 ImageNet ResNet50 (IMAGENET1K_V1) layer3 + 평균 풀링 → 1024차원 float16 | `extract.py` |
 | 저장 | 슬라이드마다 `features/{슬라이드}.h5`: features, coords [x, y], tumor_tile, tumor_ratio, n_cells, 속성 tile · mpp · encoder | `extract.py` |
 | 학습 때 고르는 것 | 종양 타일만 / 조직 타일 전부 × DX1만 / 환자 슬라이드 전부 (환자 단위로 이어 붙임) | B4 |
-| 슬라이드 삭제 | `.h5`가 생긴 슬라이드만 | 서버에서 수동 |
+| 두 번째 인코더 | H-optimus-0 (또는 Hibou-L) 특징을 같은 타일로 추가 (단계 1 특징 인코더 참고) | 예정 |
+| 슬라이드 삭제 | 두 인코더 특징이 다 생긴 슬라이드만 | 서버에서 수동 |
 
 색 정규화는 하지 않음 (바랜 H&E에서도 CellViT 핵 검출 · 종양 판정이 정상 H&E와 비슷했음).
 

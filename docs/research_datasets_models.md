@@ -21,7 +21,7 @@
 | METABRIC · SCAN-B · SEQUOIA 서명 | `docs/module1_cohorts_plan.md` 1-5 참고 | 데이터마다 다름 (같은 표 참고) | 같은 표 참고 |
 
 - **원본 WSI는 GitHub에 올리지 않습니다.** 파일 하나가 수백 MB~수 GB라 GitHub 100MB 제한에 걸립니다.
-- feature 추출 encoder는 **torchvision ImageNet ResNet50**을 씁니다. 병리 전용 모델(UNI, CONCH 등)은 접근 승인과 비상업 약관이 붙어서 기본값에서 뺐습니다.
+- feature 추출 encoder는 **torchvision ImageNet ResNet50**(기준선)과 **병리 전용 H-optimus-0 (또는 Hibou-L)**을 함께 뽑아 비교합니다. 둘 다 Apache 2.0이라 feature를 공개할 수 있습니다. UNI · CONCH · Virchow는 접근 승인 + CC BY-NC-ND, Phikon · CTransPath는 비상업 조건 + TCGA로 학습해서 뺐습니다 (`module1_cohorts_plan.md` 특징 인코더).
 - 세포 분할(CellViT-SAM-H)은 PanNuke 학습 가중치라 **비상업 연구용**입니다 (`module1_cohorts_plan.md` 단계 1).
 
 ### 0-2. GitHub 공개 원칙

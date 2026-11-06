@@ -29,6 +29,10 @@ def fetch(file_id, path):
             # 슬라이드는 수 GB라서 메모리에 올리지 않고 바로 파일로 흘려 쓴다
             with urllib.request.urlopen(f"{API}/data/{file_id}") as r, open(tmp, "wb") as f:
                 shutil.copyfileobj(r, f, length=1 << 20)
+                expected = int(r.headers["Content-Length"])
+            # GDC가 오류 없이 연결을 끊으면 잘린 파일이 남는다 (2026-11-06, 36장) → 크기가 다르면 다시 받는다
+            if tmp.stat().st_size != expected:
+                raise OSError(f"truncated {tmp.stat().st_size} / {expected} bytes")
             tmp.rename(path)  # 다 받은 파일만 .svs 이름을 가진다
             return "ok"
         except OSError as e:  # GDC가 가끔 연결을 끊는다

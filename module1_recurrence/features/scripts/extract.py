@@ -1,13 +1,15 @@
-"""종양 타일 선택(tumor_tiles) 결과의 조직 타일을 ImageNet ResNet50으로 특징 벡터로 바꾼다 (B3).
+"""종양 타일 선택(tumor_tiles) 결과의 조직 타일을 H-optimus-0으로 특징 벡터로 바꾼다 (B3).
 
-인코더는 torchvision ImageNet ResNet50 (IMAGENET1K_V1)의 layer3까지 + 평균 풀링 → 타일당 1024차원.
+인코더는 병리 전용 H-optimus-0 (Bioptimus, ViT-g/14, Apache 2.0)의 CLS 출력 → 타일당 1536차원.
+2026-11-05 시험(50장)에서 ResNet50 · Hibou-L보다 유전자 발현 예측이 분명히 좋아 하나로 정함 (계획 문서 특징 인코더).
+Hugging Face에서 이용 동의 후 `hf auth login`이 필요하고, timm이 필요하다.
 타일은 tumor_tiles CSV와 같은 격자(128 µm, 원본 `tile` 픽셀)를 원본에서 읽어 224×224로 줄여 넣는다.
 조직 타일 전부를 저장하고 `tumor_tile` 표시를 같이 남겨, 학습할 때 종양 타일 / 전체 조직 버전을 고른다.
 슬라이드마다 파일 하나를 만들고, 환자 단위(DX1만 / 모든 슬라이드)로 묶는 것은 학습 단계에서 한다.
-이미 .h5가 있는 슬라이드는 건너뛴다.
-실행: python -m module1_recurrence.features.scripts.extract [--root DIR] [--device cuda] [--batch_size 256]
+이미 같은 인코더로 뽑은 .h5가 있는 슬라이드는 건너뛴다.
+실행: python -m module1_recurrence.features.scripts.extract [--root DIR] [--device cuda] [--batch_size 128]
 결과: {root}/features/{슬라이드}.h5
-  features (N, 1024) float16, coords (N, 2) 타일 왼쪽 위 원본 픽셀 [x, y], tumor_tile (N,), tumor_ratio (N,),
+  features (N, 1536) float16, coords (N, 2) 타일 왼쪽 위 원본 픽셀 [x, y], tumor_tile (N,), tumor_ratio (N,),
   n_cells (N,), 속성 tile · mpp · encoder
 """
 import argparse
@@ -21,14 +23,14 @@ import pandas as pd
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torchvision import models, transforms
+from torchvision import transforms
 
 from module1_recurrence.data.scripts.gdc_fetch import RAW
 
-ENCODER = "resnet50_imagenet1k_v1_layer3_avgpool"
+ENCODER = "h_optimus_0"
 PREP = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    transforms.Normalize((0.707223, 0.578729, 0.703617), (0.211883, 0.230117, 0.177517)),  # 모델 카드 값
 ])
 
 
@@ -50,10 +52,15 @@ class Tiles(Dataset):
 
 
 def encoder(device):
-    m = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V1)
-    net = torch.nn.Sequential(m.conv1, m.bn1, m.relu, m.maxpool, m.layer1, m.layer2, m.layer3,
-                              torch.nn.AdaptiveAvgPool2d(1), torch.nn.Flatten())
+    import timm
+    net = timm.create_model("hf-hub:bioptimus/H-optimus-0", pretrained=True, init_values=1e-5, dynamic_img_size=False)
     return net.eval().to(device)
+
+
+def done_with_encoder(path):
+    """이미 같은 인코더로 뽑은 파일인가 (다른 인코더 파일은 다시 뽑아 덮어씀)."""
+    with h5py.File(path, "r") as f:
+        return f.attrs.get("encoder") == ENCODER
 
 
 @torch.no_grad()
@@ -71,7 +78,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, default=RAW.parent, help="slides/와 tiles/가 있는 폴더 (서버: data/sj/tcga)")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
-    ap.add_argument("--batch_size", type=int, default=256)
+    ap.add_argument("--batch_size", type=int, default=128)
     ap.add_argument("--workers", type=int, default=8, help="타일 읽기 프로세스 수")
     args = ap.parse_args()
 
@@ -83,7 +90,7 @@ def main():
     for csv in sorted((args.root / "tiles").glob("TCGA-*.csv")):
         slide = csv.stem
         dest = out / f"{slide}.h5"
-        if dest.exists() or slide not in svs:
+        if slide not in svs or (dest.exists() and done_with_encoder(dest)):
             continue
         tiles = pd.read_csv(csv)
         tiles = tiles[tiles.tissue_tile].reset_index(drop=True)

@@ -205,26 +205,39 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 - 원인은 기준 차이: BCSS는 **면적** (CellViT 종양 타일 안을 BCSS는 기질 63% · 종양 30%로 봄), CellViT는 **핵 비율** (같은 타일에서 종양 핵 68%). 기질은 핵이 적어 핵 비율로는 종양이 드러남.
 - **결정:** CellViT 기준(당시 종양 핵 비율 ≥ 0.5, 핵 ≥ 20. 이후 6-1에서 RNA 조각 맞춤으로 바꿈)을 그대로 쓰고 BCSS는 쓰지 않음. 비교 결과 파일 · BCSS 환경 · 비교 코드(`bcss_compare.py`)는 지움. 코드는 git 기록에 있음.
 
-**특징 인코더 (단계 2 입력, 2026-11-05 결정) → ResNet50 기준선 + H-optimus-0 (또는 Hibou-L) 비교**
+**특징 인코더 (단계 2 입력) → H-optimus-0 하나로 확정 (2026-11-06)**
 
-ImageNet ResNet50은 자연 사진으로 학습해 병리 의미를 직접 배우지 않았음. 라이선스 기준(승인 없이 받기, 특징 공개 가능)을 지키는 병리 전용 모델을 하나 더 뽑아 같은 타일 · 같은 fold로 비교.
+라이선스 기준(승인 없이 받기, 특징 공개 가능)을 지키는 후보 중 병리 전용 2개와 ImageNet ResNet50을 시험 실행으로 비교해 H-optimus-0 하나로 정함. ResNet50 · Hibou-L 코드와 시험 코드(`encoder_pilot.py`)는 지움 (git 기록에 있음).
 
 | 모델 | 구조 · 차원 | 학습 데이터 | 라이선스 · 받기 | 벤치마크 (eva 9과제 평균) | 판단 |
 |---|---|---|---|---|---|
-| ImageNet ResNet50 | layer3 + 평균 풀링, 1024 | ImageNet | BSD, torchvision | — | **기준선** (현재 `extract.py`) |
-| **H-optimus-0** (Bioptimus) | ViT-g (약 11억), 1536 | 자체 50만 장 이상 | Apache 2.0, HF 로그인 + 연락처 동의 | 0.793 | **1순위**. 느림 |
-| **Hibou-L** (HistAI) | ViT-L | 자체 100만 장 이상 | Apache 2.0 (`cellvit-hibou-l` 등 파생은 비상업) | 0.777 | H-optimus-0이 너무 느리면 대신 |
+| ImageNet ResNet50 | layer3 + 평균 풀링, 1024 | ImageNet | BSD, torchvision | — | 시험에서 탈락 (유전자 과제가 무작위와 같음) |
+| **H-optimus-0** (Bioptimus) | ViT-g (약 11억), 1536 | 자체 50만 장 이상 | Apache 2.0, HF 로그인 + 연락처 동의 | 0.793 | **채택** (`extract.py`) |
+| **Hibou-L** (HistAI) | ViT-L | 자체 100만 장 이상 | Apache 2.0 (`cellvit-hibou-l` 등 파생은 비상업) | 0.777 | 시험에서 탈락 |
 | Phikon / Phikon-v2 (Owkin) | ViT-B / ViT-L | **TCGA** | Owkin 비상업 | 0.753 | 제외: 비상업 + TCGA 평가 시 누수 |
 | CTransPath | Swin-T, 768 | **TCGA** + PAIP | GPL-3.0 + 비상업 학술 문구 | 최신 모델보다 낮음 | 제외: 같은 누수 · 옛 `timm` 필요 |
 
-- 벤치마크 출처: MINT (arXiv 2603.07895) eva 표, Neidlinger et al. *Nat Biomed Eng* 2025 (19개 모델, H-optimus-0 상위권). 라이선스는 2026-11-05 Hugging Face 모델 페이지 기준.
-- 추출 시간 추정 (실측 아님): ResNet50 510장 약 4–5시간, Hibou-L 약 하루, H-optimus-0 며칠 → 50장으로 속도를 먼저 재고 결정. 타일은 한 번 읽어 두 인코더에 같이 넣음.
-- **선택 방법: 시험 실행** (`features/scripts/encoder_pilot.py`). 처리된 슬라이드 최대 50장에서 RNA 조각 맞춤 타일 · 그 밖의 조직 타일을 각각 300개씩 뽑아 세 인코더에 넣고:
-  1. **속도:** GPU 계산 · 타일 읽기 초당 타일 수 → 510장 시간 추정
-  2. **타일 미니 과제:** CellViT 핵 구성(종양 · 염증 · 기질 비율, log 핵 수)을 ridge로 맞힘, 슬라이드 단위 5-fold R². 정답이 공짜라 타일이 많고 안정적
-  3. **실제 과제 축소판:** 환자별 맞춤 타일 평균 → R 목록 493개 · Oncotype 16개 log2(TPM+1), 환자 5-fold ridge, 유전자별 Pearson r. 신호가 없어도 r 중앙값이 음수로 나오므로 무작위 특징(random)과 비교. 50명이라 방향만 봄
-- **결정 규칙:** H-optimus-0이 510장에 2–3일 안이면 ResNet50과 둘 다 뽑고 최종 선택은 B4 교차검증 (특징 약 10 GB). 너무 느리면 2번에서 Hibou-L이 비슷할 때 Hibou-L. ResNet50은 기준선으로 항상 유지.
-- **두 번째 인코더 특징이 생기기 전에는 슬라이드를 지우지 않음** (지우면 다시 받아야 함).
+- 벤치마크 출처: MINT (arXiv 2603.07895) eva 표, Neidlinger et al. *Nat Biomed Eng* 2025 (19개 모델, H-optimus-0 상위권). 라이선스는 2026-11-05 Hugging Face 모델 페이지 기준. H-optimus-0 · Hibou-L 모두 HF 로그인 + 이용 동의 필요 (자동 승인).
+- **시험 방법 (2026-11-05):** 처리된 50장에서 RNA 조각 맞춤 타일 · 그 밖의 조직 타일을 슬라이드당 300개씩 (27,433타일) 세 인코더에 넣고 ① GPU 속도 ② 타일 미니 과제: CellViT 핵 구성을 ridge로 맞힘, 슬라이드 단위 5-fold R² ③ 실제 과제 축소판: 환자별 맞춤 타일 평균 → R 목록 493개 · Oncotype 16개 log2(TPM+1), 환자 5-fold ridge, 유전자별 Pearson r. 교차검증 r은 신호가 없어도 음수로 나오므로 무작위 특징과 비교.
+
+| | ResNet50 | **H-optimus-0** | Hibou-L | 무작위 (기준선) |
+|---|---|---|---|---|
+| 차원 | 1024 | 1536 | 1024 | 1024 |
+| GPU 속도 (타일/초) | 6,227 | **224** | 708 | — |
+| 510장 예상 (조직 타일 평균 7,693개 × 510) | 약 1.5시간 (읽기 한계) | **약 5시간** | 약 1.7시간 | — |
+| 종양 핵 비율 R² | 0.814 | **0.868** | 0.829 | −0.003 |
+| 염증 세포 비율 R² | 0.695 | **0.819** | 0.611 | −0.003 |
+| 기질 세포 비율 R² | 0.783 | 0.838 | **0.850** | −0.004 |
+| log 핵 수 R² | 0.897 | 0.930 | **0.942** | −0.002 |
+| 유전자 발현 r 중앙값, R 목록 493개 | −0.314 | **0.120** | −0.173 | −0.320 |
+| r > 0.3 유전자 수, R 목록 | 0 | **82** | 0 | 0 |
+| 유전자 발현 r 중앙값, Oncotype 16개 | −0.326 | **0.116** (r > 0.3: 3개) | −0.188 | −0.319 |
+
+- 무작위와의 차이: **H-optimus-0 +0.44**, Hibou-L +0.15, ResNet50 0. 타일 과제는 셋 다 세포 구성을 잘 담음 (R² 0.6–0.94), 유전자 과제에서 차이가 크게 벌어짐.
+- 50명 · ridge 하나의 결과라 수치 자체는 흔들림. 다만 차이가 커서 순위는 믿을 만함.
+- 속도: GPU 속도와 실제 추출의 읽기 속도(초당 약 640)로 계산. H-optimus-0도 슬라이드당 약 35초로 CellViT(약 22분)에 비해 작음.
+- **결정: H-optimus-0 하나만 뽑음** (1536차원 float16, 510장 약 12 GB). 2026-11-05에 ResNet50으로 뽑은 13장은 서버에서 지움 (`extract.py`는 인코더가 다른 h5를 다시 뽑음).
+- **H-optimus-0 특징이 생기기 전에는 슬라이드를 지우지 않음.**
 
 **슬라이드 QC 결과 (`slide_qc.py`, TCGA-BRCA 진단 슬라이드 1,133장, 2026-11-04)**
 
@@ -290,7 +303,7 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 |---|---|---|---|
 | **B1** | 슬라이드 받기 · QC | GPU 서버(`ssh gpu`, `data/sj/tcga/`)에 HR+/HER2− 514명 DX1 받기 (`slide_download.py`), 썸네일 QC (`slide_qc.py`) | **진행 중** (2026-11-05): 514장 중 510장 받음, 실패분 재시도 중. 1,047명 확장 · 나머지 532명 RNA는 필요할 때 |
 | **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 (`tumor_tiles.py`) | **기준 확정** (6장 규칙, 6-1 RNA 조각 맞춤). 514장 처리 진행 중 (GPU 1장 약 7일) |
-| **B3** | 특징 추출 | `features/scripts/extract.py`: ImageNet ResNet50 (layer3 + 평균 풀링, 1024차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 서버 시험: 조직 타일 19,754개 31초 (RTX 5090). 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고). **남은 것:** H-optimus-0 (또는 Hibou-L) 특징 추가 (단계 1 특징 인코더 참고) → **두 인코더 특징이 다 생긴 슬라이드만 지움** |
+| **B3** | 특징 추출 | `features/scripts/extract.py`: **H-optimus-0** (CLS, 1536차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 인코더는 시험 실행으로 H-optimus-0 확정 (2026-11-06, 단계 1 특징 인코더 참고). 시험 속도 초당 224타일 (RTX 5090), 510장 약 5시간. 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고). **H-optimus-0 특징이 생긴 슬라이드만 지움** |
 | **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | RNA 조각 맞춤 / 고정 기준 / 전체 타일 세 버전 결과 비교 (`tile_sets.select`) |
 
 ### C. 합치기
@@ -323,11 +336,10 @@ H&E 단계 평가(TCGA에서 H&E 예측 서명 → PFI, Howard · SEQUOIA 방식
 | 종양 타일 (고정 기준) | 조직 타일 & Neoplastic 핵 / 전체 핵 ≥ **0.7** & Neoplastic 핵 ≥ **50** (2026-11-05 변경, 이전 0.5 · 개수 기준 없음). 0.7은 RNA 조각의 종양 핵 % (중앙값 80, 25% 70)에 맞춤, 50개는 세포가 듬성한 섬유질 위주 타일 제외 | `tumor_tiles.py`, `tile_sets.py` |
 | 종양 타일 (RNA 조각 맞춤) | 종양 핵 ≥ 50인 조직 타일을 종양 핵 비율 높은 순으로 담다가, 담은 타일 전체의 종양 핵 비율(종양 핵 합 / 전체 핵 합)이 **환자의 RNA 조각 종양 핵 %**까지 내려오면 멈춤. 예측 때(새 환자는 값 없음)는 코호트 중앙값 80% | `rna_purity.py`, `tile_sets.py` |
 | 보조 확인 | 큰 펜 원(볼록 껍질) 안쪽 종양 타일 비율, 썸네일 · 선택 결과 비교 JPG | `tumor_tiles.py` |
-| 특징 | 조직 타일 전부를 원본에서 읽어 224×224로 줄여 ImageNet ResNet50 (IMAGENET1K_V1) layer3 + 평균 풀링 → 1024차원 float16 | `extract.py` |
+| 특징 | 조직 타일 전부를 원본에서 읽어 224×224로 줄여 **H-optimus-0** (ViT-g/14, CLS 출력) → 1536차원 float16. 정규화는 모델 카드 값 | `extract.py` |
 | 저장 | 슬라이드마다 `features/{슬라이드}.h5`: features, coords [x, y], tumor_tile, tumor_ratio, n_cells, 속성 tile · mpp · encoder | `extract.py` |
 | 학습 때 고르는 것 | RNA 조각 맞춤 / 고정 기준 / 조직 타일 전부 × DX1만 / 환자 슬라이드 전부 (환자 단위로 이어 붙인 뒤 고름). h5의 `tumor_tile`은 추출 당시 기준(0.5)이라 쓰지 않고 `tumor_ratio` · `n_cells`로 다시 판정 | `tile_sets.select` (B4) |
-| 두 번째 인코더 | H-optimus-0 (또는 Hibou-L) 특징을 같은 타일로 추가 (단계 1 특징 인코더 참고) | 예정 |
-| 슬라이드 삭제 | 두 인코더 특징이 다 생긴 슬라이드만 | 서버에서 수동 |
+| 슬라이드 삭제 | H-optimus-0 특징(`features/{슬라이드}.h5`, encoder 속성 `h_optimus_0`)이 생긴 슬라이드만 | 서버에서 수동 |
 
 색 정규화는 하지 않음 (바랜 H&E에서도 CellViT 핵 검출 · 종양 판정이 정상 H&E와 비슷했음).
 
@@ -373,7 +385,6 @@ SEQUOIA 파일은 `baselines.py` 맨 위 설명의 주소에서 받아 `data/seq
 | 4 | 서버 | `python -m module1_recurrence.features.scripts.run_batch --root data/sj/tcga --batch 0 --gpu 1` (반복) | `cellvit/`, `tiles/`, `features/` |
 | 5 | 이 PC | `python -m module1_recurrence.data.scripts.rna_purity` | `data/tcga/rna_purity.csv` (환자별 RNA 조각 구성) |
 | 6 | 서버 | 기준을 바꿨을 때 `python -m module1_recurrence.features.scripts.tumor_tiles --root data/sj/tcga --redo` | `tiles/` CSV · JPG 다시 계산 (특징은 그대로) |
-| 7 | 이 PC → 서버 | `python -m module1_recurrence.features.scripts.encoder_pilot --make_expr` → `data/tcga/{rna_purity,expr_pilot}.csv`, `outputs/module1/r_genes.csv`를 서버 `data/sj/tcga/`로 복사 → 서버에서 `...encoder_pilot --root data/sj/tcga` | `pilot/encoder_pilot.json` (인코더 선택) |
 
 ---
 

@@ -5,6 +5,7 @@ GDC 슬라이드 뷰어용 타일 API(DeepZoom)에서 긴 변 1024픽셀 이하 
   H&E 색 비율만 낮으면 에오신이 바랜 H&E (`H&E_faded`)로 따로 표시한다.
 - 펜: 초록 · 파랑 · 검정 펜 픽셀 비율과 마스크(png)를 남긴다 → 타일 단계에서 펜이 지나가는 타일을 뺀다.
 실행: python -m module1_recurrence.data.scripts.slide_qc [--limit N] [--root DIR]
+      GDC 썸네일이 안 된 슬라이드: ... slide_qc --root DIR --from_svs TCGA-AC-A6NO-01Z-00-DX1 (받아 둔 원본으로 다시 판정)
 결과: {root}/qc/slide_qc.csv, {root}/qc/thumbs/*.png, {root}/qc/pen_masks/*.png,
       {root}/qc/{IHC_suspect,HE_faded,check_thumb,pen,red_outline,red_remnant,red_tissue_red}.png (종류별 썸네일 모음)
 """
@@ -148,6 +149,32 @@ def run_one(row, out):
         return {"file_id": row.file_id, "slide": name, "patient_id": row.patient_id, "error": str(e)}
 
 
+def from_svs(names, root):
+    """GDC 썸네일이 깨졌거나(check_thumb) 받지 못한(error) 슬라이드를 받아 둔 원본 svs로 다시 판정해 qc 표를 고친다."""
+    import openslide
+    out = root / "qc"
+    qc = pd.read_csv(out / "slide_qc.csv")
+    for name in names:
+        o = openslide.OpenSlide(str(next((root / "slides").glob(f"{name}.*.svs"))))
+        w, h = o.dimensions
+        down = 2 ** max(0, math.ceil(math.log2(max(w, h) / MAX_SIDE)))
+        img = o.get_thumbnail((math.ceil(w / down), math.ceil(h / down))).convert("RGB")
+        img.save(out / "thumbs" / f"{name}.png")
+        stats, pen = measure(img)
+        Image.fromarray(pen.astype(np.uint8) * 255).save(out / "pen_masks" / f"{name}.png")
+        i = qc.index[qc.slide == name][0]
+        for k, v in {"thumb_w": img.width, "thumb_h": img.height, "downsample": down, **stats}.items():
+            qc.loc[i, k] = v
+        qc.loc[i, "error"] = None
+        low_he = qc.loc[i, "he_frac"] < LOW_HE
+        stain = "IHC_suspect" if low_he and qc.loc[i, "brown_frac"] >= IHC_BROWN else "H&E_faded" if low_he else "H&E"
+        qc.loc[i, "stain"] = "check_thumb" if stats["tissue_frac"] < MIN_TISSUE or stats["red_kind"] == "broken" else stain
+        red_ink = stats["red_kind"] in ("outline", "remnant")
+        qc.loc[i, "pen"] = (stats["green_pen_frac"] + stats["blue_pen_frac"] + (stats["red_pen_frac"] if red_ink else 0)) > 0.005
+        print(qc.loc[i, ["slide", "stain", "tissue_frac", "he_frac", "brown_frac", "pen", "downsample"]].to_dict())
+    qc.to_csv(out / "slide_qc.csv", index=False)
+
+
 def contact_sheet(paths, dest, cell=256, cols=8):
     """IHC 의심 슬라이드 썸네일을 한 장에 모은다 (눈으로 확인용)."""
     rows = math.ceil(len(paths) / cols)
@@ -163,7 +190,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", type=Path, default=RAW.parent, help="raw/dx_slides.tsv가 있는 폴더")
     ap.add_argument("--limit", type=int, help="앞에서 N장만 (테스트용)")
+    ap.add_argument("--from_svs", nargs="+", metavar="SLIDE", help="이 슬라이드만 받아 둔 원본 svs로 다시 판정 (예: TCGA-AC-A6NO-01Z-00-DX1)")
     args = ap.parse_args()
+    if args.from_svs:
+        return from_svs(args.from_svs, args.root)
 
     out = args.root / "qc"
     for d in ("thumbs", "pen_masks"):

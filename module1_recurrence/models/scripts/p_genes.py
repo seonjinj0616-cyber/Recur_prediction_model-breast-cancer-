@@ -4,7 +4,9 @@
    (--tiles matched: RNA 조각 종양 핵 %에 맞춤 / tumor: 고정 기준 / all: 조직 타일 전부)
    유전자는 코호트 전체(515명) 중 절반 이상에서 TPM ≥ 1인 것만 쓴다 (12,758 / 17,813개). TPM 0은 빠진 값이 아니라
    "검출 안 됨"이라 값을 빼지 않고, 대부분 환자에서 측정되지 않는 유전자를 통째로 뺀다.
-2. 환자 단위 5-fold, StandardScaler + RidgeCV(유전자마다 alpha) → 유전자 log2(TPM + 1)의 교차검증 예측
+2. 기관(TSS) 단위 5-fold (같은 병원 환자는 한 fold에, `--cv random`이면 환자 단위 무작위),
+   StandardScaler + RidgeCV(유전자마다 alpha) → 유전자 log2(TPM + 1)의 교차검증 예측.
+   병원마다 스캐너 · 염색 · RNA 처리 인력이 달라, 무작위로 나누면 병원 차이를 외운 것도 예측력처럼 보이기 때문.
 3. 대조: 같은 차원의 무작위 특징으로 같은 과정 (SEQUOIA의 "학습하지 않은 무작위 모델"에 해당)
 4. 유전자마다 SEQUOIA 기준 세 가지를 모두 만족하면 잘 예측됨:
    ① Pearson r > 0, P < 0.05  ② 대조보다 r이 유의하게 큼 (Steiger · Meng 검정, 한쪽 P < 0.05, BH < 0.2)
@@ -12,7 +14,7 @@
 
 먼저 data.scripts.tcga_expression으로 data/tcga/expr.parquet, rna_purity로 rna_purity.csv를 만들어 {root}에 둔다.
 실행: python -m module1_recurrence.models.scripts.p_genes --root data/sj/tcga [--tiles matched] [--all_slides]
-결과: {out}/p_genes_{tiles}_{dx1|all}.csv (유전자별 r · P · 대조 r · Steiger · RMSE · well), 같은 이름 .json 요약
+결과: {out}/p_genes_{tiles}_{dx1|all}_tss.csv (random이면 _tss 없음) (유전자별 r · P · 대조 r · Steiger · RMSE · well), 같은 이름 .json 요약
 """
 import argparse
 import json
@@ -22,7 +24,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 from sklearn.linear_model import RidgeCV
-from sklearn.model_selection import KFold, cross_val_predict
+from sklearn.model_selection import GroupKFold, KFold, cross_val_predict
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -69,9 +71,11 @@ def expressed_genes(expr, min_frac):
     return expr.columns[(expr >= 1).mean() >= min_frac]
 
 
-def cv_predict(x, y, seed):
+def cv_predict(x, y, seed, groups=None):
+    """groups가 있으면 같은 그룹(기관)이 학습 · 평가에 나뉘지 않게 fold를 나눈다."""
     model = make_pipeline(StandardScaler(), RidgeCV(alphas=ALPHAS, alpha_per_target=True))
-    return cross_val_predict(model, x, y, cv=KFold(5, shuffle=True, random_state=seed))
+    cv = KFold(5, shuffle=True, random_state=seed) if groups is None else GroupKFold(5)
+    return cross_val_predict(model, x, y, cv=cv, groups=groups)
 
 
 def pearson_cols(a, b):
@@ -123,6 +127,9 @@ def main():
     ap.add_argument("--min_expr_frac", type=float, default=0.5, help="TPM ≥ 1인 환자가 이 비율 이상인 유전자만")
     ap.add_argument("--out", type=Path, default=None, help="결과 폴더 (기본: {root}/p_genes)")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--cv", default="tss", choices=["tss", "random"],
+                    help="tss(기본): 같은 기관(TSS, 환자 ID 6–7번째 글자) 환자를 한 fold에 묶음. random: 환자 단위 무작위 (SEQUOIA 방식, 비교용)")
+    ap.add_argument("--save_pred", action="store_true", help="교차검증 예측 발현(환자 × 유전자)을 {name}_pred.parquet로 저장 (C2 H&E 평가용)")
     args = ap.parse_args()
 
     out = args.out or args.root / "p_genes"
@@ -135,17 +142,20 @@ def main():
     y = y.loc[:, y.std() > 0]
     print(f"patients {len(pids)} (dropped {len(dropped)} with < {args.min_tiles} tiles), genes {y.shape[1]}", flush=True)
 
-    pred = cv_predict(x, y.to_numpy(), args.seed)
+    groups = pids.str[5:7].to_numpy() if args.cv == "tss" else None
+    pred = cv_predict(x, y.to_numpy(), args.seed, groups)
     null = np.random.default_rng(args.seed).normal(size=x.shape)
-    pred_null = cv_predict(null, y.to_numpy(), args.seed)
+    pred_null = cv_predict(null, y.to_numpy(), args.seed, groups)
     res = judge(y.to_numpy(), pred, pred_null)
     res.insert(0, "gene", y.columns)
     res = res.sort_values("r", ascending=False).reset_index(drop=True)
     res.insert(1, "rank", np.arange(1, len(res) + 1))
 
-    name = f"p_genes_{args.tiles}_{'all' if args.all_slides else 'dx1'}"
+    name = f"p_genes_{args.tiles}_{'all' if args.all_slides else 'dx1'}" + ("_tss" if args.cv == "tss" else "")
     res.to_csv(out / f"{name}.csv", index=False)
-    summary = {"tiles": args.tiles, "all_slides": args.all_slides, "patients": len(pids),
+    if args.save_pred:
+        pd.DataFrame(pred.astype(np.float32), index=y.index, columns=y.columns).to_parquet(out / f"{name}_pred.parquet")
+    summary = {"tiles": args.tiles, "all_slides": args.all_slides, "cv": args.cv, "patients": len(pids),
                "dropped": dropped, "median_tiles": int(n_tiles.loc[pids].median()), "min_expr_frac": args.min_expr_frac, "genes": len(res),
                "well_predicted": int(res.well.sum()), "median_r": round(float(res.r.median()), 3),
                "median_r_null": round(float(res.r_null.median()), 3),

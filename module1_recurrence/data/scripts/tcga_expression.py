@@ -6,6 +6,9 @@ STAR-Counts의 tpm_unstranded를 쓰고, 같은 유전자 기호가 여러 Ensem
 실행: python -m module1_recurrence.data.scripts.tcga_expression
 결과: data/tcga/expr.parquet (행: patient_id)
 """
+import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -15,17 +18,22 @@ OUT = TCGA_RNA.parent / "expr.parquet"
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--manifest", type=Path, default=TCGA_RNA.parent / "manifest.csv")
+    ap.add_argument("--rna_dir", type=Path, default=TCGA_RNA)
+    ap.add_argument("--out", type=Path, default=OUT)
+    args = ap.parse_args()
     genes = COMMON.read_text().split()
-    m = pd.read_csv(TCGA_RNA.parent / "manifest.csv")
+    m = pd.read_csv(args.manifest)
     cols = {}
     for pid in m.patient_id:
-        d = pd.read_csv(TCGA_RNA / f"{pid}.tsv", sep="\t", comment="#", usecols=["gene_name", "tpm_unstranded"])
+        d = pd.read_csv(args.rna_dir / f"{pid}.tsv", sep="\t", comment="#", usecols=["gene_name", "tpm_unstranded"])
         cols[pid] = d.groupby("gene_name").tpm_unstranded.sum().reindex(genes)
     expr = np.log2(pd.DataFrame(cols).T.astype("float32") + 1)
     expr.index.name = "patient_id"
     missing = expr.columns[expr.isna().all()].tolist()
-    expr.to_parquet(OUT)
-    print(expr.shape, "→", OUT, "| 모든 환자에서 값 없는 유전자:", missing[:10], len(missing))
+    expr.to_parquet(args.out)
+    print(expr.shape, "→", args.out, "| 모든 환자에서 값 없는 유전자:", missing[:10], len(missing))
 
 
 if __name__ == "__main__":

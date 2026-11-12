@@ -8,8 +8,10 @@ manifest의 RNA sample ID(예: TCGA-A1-A0SB-01A)와 같은 sample의 TS · BS ·
 실행: python -m module1_recurrence.data.scripts.rna_purity
 결과: data/tcga/rna_purity.csv (환자마다 한 줄, 값은 % 단위)
 """
+import argparse
 import json
 import urllib.request
+from pathlib import Path
 
 import pandas as pd
 
@@ -40,13 +42,16 @@ def fetch_sections():
 
 
 def main():
-    m = pd.read_csv(RAW.parent / "manifest.csv")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--manifest", type=Path, default=RAW.parent / "manifest.csv", help="다른 환자 목록 (예: data/tcga/other/manifest.csv)")
+    args = ap.parse_args()
+    m = pd.read_csv(args.manifest)
     sec = fetch_sections()
     sec = sec[sec.sample_id.isin(m.rna_sample_id)]
     out = sec.groupby(["patient_id", "sample_id"]).agg(
         sections=("kind", lambda k: "+".join(sorted(set(k)))),**{v: (v, "mean") for v in FIELDS.values()}).reset_index()
     out = m[["patient_id"]].merge(out, on="patient_id", how="left")
-    out.to_csv(RAW.parent / "rna_purity.csv", index=False, float_format="%.1f")
+    out.to_csv(args.manifest.parent / "rna_purity.csv", index=False, float_format="%.1f")
     print(f"{out.tumor_nuclei.notna().sum()}/{len(m)} patients with RNA-piece tumor nuclei %")
     print(out.tumor_nuclei.describe().round(1).to_string())
 

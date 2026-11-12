@@ -27,7 +27,8 @@ def fetch(file_id, path):
     for attempt in range(RETRIES):
         try:
             # 슬라이드는 수 GB라서 메모리에 올리지 않고 바로 파일로 흘려 쓴다
-            with urllib.request.urlopen(f"{API}/data/{file_id}") as r, open(tmp, "wb") as f:
+            # timeout: GDC가 응답 없이 연결을 붙잡으면 무한히 기다림 (2026-11-10, 16시간 0바이트) → 끊고 다시 시도
+            with urllib.request.urlopen(f"{API}/data/{file_id}", timeout=120) as r, open(tmp, "wb") as f:
                 shutil.copyfileobj(r, f, length=1 << 20)
                 expected = int(r.headers["Content-Length"])
             # GDC가 오류 없이 연결을 끊으면 잘린 파일이 남는다 (2026-11-06, 36장) → 크기가 다르면 다시 받는다
@@ -46,6 +47,8 @@ def main():
     ap.add_argument("--batch", type=int, default=300, help="아직 처리하지 않은 슬라이드 중 앞에서 N장")
     ap.add_argument("--root", type=Path, default=RAW.parent, help="manifest.csv가 있는 폴더 (서버: data/sj/tcga)")
     ap.add_argument("--all_slides", action="store_true", help="환자의 DX 슬라이드 전부 (기본: 첫 번째만)")
+    ap.add_argument("--workers", type=int, default=4, help="동시 다운로드 수 (GDC는 연결당 속도가 낮아 늘리면 빨라짐)")
+    ap.add_argument("--exclude", type=Path, help="받지 않을 file_id 목록 (한 줄에 하나, 다른 작업이 같은 슬라이드를 받는 경우)")
     args = ap.parse_args()
 
     slide_dir, feat_dir = args.root / "slides", args.root / "features"
@@ -62,12 +65,14 @@ def main():
     qc_path = args.root / "qc" / "slide_qc.csv"
     ihc = set(pd.read_csv(qc_path).query("stain == 'IHC_suspect'").file_id) if qc_path.exists() else set()
     m = m[~m.file_id.isin(ihc)]
+    if args.exclude:
+        m = m[~m.file_id.isin(set(args.exclude.read_text().split()))]
     done = m.file_name.map(lambda n: (feat_dir / f"{n.split('.')[0]}.h5").exists())
     todo = m[~done].head(args.batch)
     print(f"slides {len(m)} of {m.patient_id.nunique()} patients (IHC excluded {len(ihc)}) "
           f"| features done {int(done.sum())} | this batch {len(todo)}")
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=args.workers) as ex:
         results = list(ex.map(fetch, todo.file_id, todo.path))
 
     gb = sum(f.stat().st_size for f in slide_dir.glob("*.svs")) / 1e9

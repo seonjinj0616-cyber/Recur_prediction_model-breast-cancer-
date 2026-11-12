@@ -73,20 +73,6 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 - **폐경 정보가 없어서 나이 구간 51세 이상을 폐경 후로 봄** (근사).
 - PAM50 ROR(NCN.ROR, SSP.ROR)이 이미 계산되어 있어 비교 기준으로 바로 쓸 수 있음.
 
-### 1-4. CPTAC-BRCA — H&E → 유전자 외부 검증 (단계 2 확인용)
-| 항목 | 내용 |
-|---|---|
-| RNA-seq | 133명, GDC 공개, TCGA와 같은 STAR-Counts 형식 |
-| 슬라이드 | TCIA 642장 (약 113 GB) |
-| ER/HER2 | GDC에 없음 → Krug 2020 Table S1에서 가져와야 함 (미확인) |
-| 재발 정보 | 없음 → 재발 검증 불가 |
-
-- **용도:** 재발 모듈 검증이 아니라 단계 2(H&E → 유전자 발현 예측)가 TCGA 밖에서도 맞는지 확인. 재발 검증은 SCAN-B(C2).
-- **받는 곳 (2026-11-10 확인):** RNA는 GDC CPTAC-2 유방 원발 종양 133명 (STAR-Counts). 슬라이드는 IDC `cptac_brca` (DICOM 변환본, H&E 653장 · 198명) → RNA 있는 122명의 402장 (75 GB). 106명은 슬라이드 ID가 RNA 샘플 ID와 같음 (RNA를 뽑은 그 조각, 111장). `data/scripts/cptac_fetch.py`.
-- **형식 문제:** 402장 중 205장 (40배 전부, RNA 조각 슬라이드 111장 중 92장)이 JPEG 2000 (YBR_FULL_422) → OpenSlide 4.0.1 · CellViT가 못 읽음. `wsidicom`으로 JPEG DICOM으로 다시 저장하면 읽힘 (큰 슬라이드 1장 약 10분, 용량 약 3.4배, wsidicom 0.20.6 버그 우회 필요).
-- **결정 (2026-11-10):** 시간이 남을 때 진행. 하게 되면 **환자당 1장** (RNA 조각 슬라이드 우선, 약 122장)만, TCGA와 같게 **CellViT로 종양 영역을 골라** 비교 (종양 세포 분포가 비슷한 영역끼리 비교해야 의미가 있음).
-- **해석 주의:** CPTAC에서는 다시 학습하지 않고 TCGA(482명)로 학습한 모델을 그대로 적용 → CPTAC 환자 수는 모델 성능이 아니라 **판정의 통계적 힘**에만 영향. 약 100명이면 r ≈ 0.2 미만은 P < 0.05가 안 돼 "유의한 유전자 수"는 TCGA보다 적게 나오는 게 당연함. 따라서 유의한 개수가 아니라 ① TCGA r과 CPTAC r의 유전자별 상관 ② P 유전자의 CPTAC r이 P가 아닌 유전자보다 높은지 ③ 상위 유전자의 r 신뢰구간으로 판정.
-
 ### 1-5. 데이터 위치
 다운로드: `python -m module1_recurrence.data.scripts.external_fetch` (발현 행렬까지: `--expression`, 주소만 확인: `--check`)
 
@@ -146,7 +132,7 @@ RNA-seq, 원격 재발 무사건 구간(**DRFi**) 있음. 추적 코호트(Follo
 | 단계 | 내용 | 데이터 · 코호트 | 기존 논문과 다른 점 |
 |---|---|---|---|
 | **1. 종양 밀집 영역만 사용** | 세포 분할 모델로 타일별 종양 세포 비율을 계산하고, 종양 비율이 높은 타일만 남김 | TCGA 1,047명 슬라이드 | SEQUOIA는 배경만 빼고 **무작위 타일** 사용, 종양 선별 없음 |
-| **2. H&E ↔ RNA 연관 순위** | 남긴 타일로 유전자 발현 예측 → **SEQUOIA와 같은 기준**으로 "잘 예측된 유전자" 판정 → Pearson r 순으로 순위 | TCGA 1,047명 (HR+/HER2− 531명은 민감도), CPTAC로 외부 확인 | 기준은 SEQUOIA와 같게 두고, **순위 기준(Pearson r)을 명시** (SEQUOIA는 미기재) |
+| **2. H&E ↔ RNA 연관 순위** | 남긴 타일로 유전자 발현 예측 → **SEQUOIA와 같은 기준**으로 "잘 예측된 유전자" 판정 → Pearson r 순으로 순위 | TCGA 1,047명 (HR+/HER2− 531명은 민감도) | 기준은 SEQUOIA와 같게 두고, **순위 기준(Pearson r)을 명시** (SEQUOIA는 미기재) |
 | **3. RNA ↔ 원격 재발** | 유전자별 Cox (림프절·크기·등급·나이 보정) → FDR < 0.05 전부를 R 목록으로 | METABRIC HR+/HER2− 1,251명 (기록 완전, 원격 재발 272건) | SEQUOIA는 재발 유전자를 **TCGA(추적 약 2년, 재발 전체)**에서 고름 → 우리는 **장기 추적 + 원격 재발** |
 | **4. 교집합** | P(단계 2) ∩ R(단계 3), 두 플랫폼에 모두 있는 유전자만 | — | 두 목록을 **독립 코호트에서** 만든 뒤 교집합 (SEQUOIA는 같은 TCGA에서 순차 필터) |
 | **5. 재발 수치 계산** | 교집합 유전자로 Cox 모델 학습 → 가중치 고정 → 재발 위험 점수 + 10년 원격 재발 확률 → SCAN-B 외부 검증 | 학습: METABRIC / 검증: SCAN-B 검사 권고 3,095명 (원격 재발 128건) | HR+/HER2−·검사 권고 코호트 평가, 유사 RS와 같은 환자로 비교 |
@@ -457,11 +443,10 @@ SCAN-B 검사 권고 코호트 (점수가 모두 있는 3,053명, 10년 원격 �
 - 점수 자체가 H&E로 얼마나 재현되는지 (측정 RNA 점수와 H&E 점수의 상관): P ∩ R 0.73 > P 0.68 > 전체 0.50 > R 0.44 → 교집합 설계의 목적(H&E로 재현 가능한 재발 점수)과 맞는 결과.
 - **한계:** TCGA는 사건이 37건(검사 권고 24건)뿐이고 추적이 짧아 (중앙값 약 2년), 측정 RNA로도 C-index 0.57 수준이며 모든 CI가 0.5를 포함. 묶음 간 차이도 모두 CI 안 (P ∩ R − R: −0.09 ~ +0.03). PFI는 국소 재발 · 진행을 포함해 METABRIC 원격 재발과 정의가 다름. → 방향을 보는 근거로만 쓰고, 결론은 원격 재발 추적이 긴 H&E 코호트가 있어야 함.
 
-**CPTAC-BRCA 재발 정보 확인 (2026-11-10) → 없음**
-- GDC `CPTAC-2` 유방 134명: `progression_or_recurrence` · `days_to_recurrence` · `vital_status` · 추적(follow_ups) 모두 비어 있음 (Not Reported). 임상 첨부 파일(Clinical data category) 0개.
-- IDC 임상 표 `cptac_brca_clinical` (RNA 있는 122명): 재발 · 사망 · 마지막 추적일 · 추적 항목 열은 있으나 122명 모두 빈 값.
-- Krug et al. 2020 *Cell* (CPTAC 유방 논문): 생존 Kaplan-Meier는 모두 **METABRIC** 자료로 그림 (CPTAC 환자 아님). 임상 자료는 진단 시 기록 + **치료 후 1년 추적 양식**뿐 (원 자료 CPTAC 데이터 포털 S039). ER/PR/HER2는 병리 보고서 기준 ER 또는 PR 양성 83 · HER2 양성 13 · 삼중음성 16 · HER2 미확정 12.
-- → CPTAC은 재발 검증에 쓸 수 없음 (1년 추적은 10년 원격 재발 평가에 부족). 원래 계획대로 단계 2(H&E → 발현) 외부 확인 용도로만.
+**외부 검증의 타일 방식 (2026-11-11 결정)** — 학습은 RNA 조각에 맞춘 타일(CellViT)로 하되, 외부 검증 슬라이드는 **전체 조직**으로 봄.
+- 이유: CellViT 맞춤은 학습 때 RNA 발현값과 조직의 짝을 맞추려는 것. 외부 검증 데이터(HistologyHSI-BC)에는 RNA가 없어 맞출 목표 비율 자체가 없음.
+- TCGA 같은 환자(478명, 기관 단위 5-fold)로 학습 · 검증 방식을 섞어 본 점수 재현도 r: 맞춤 → 맞춤 0.747 · 맞춤 → 고정 기준 0.750 · **맞춤 → 전체 조직 0.715** · 전체 → 전체 0.720. 전체 조직으로 검증하면 r이 0.03 낮아지고 점수 평균이 0.1 SD 정도 이동하는 데 그침 → 전체 조직 검증으로 충분.
+- HistologyHSI-BC(MRXS)에서는 CellViT의 타일 추출(pathopatch)이 47장 중 47장 모두 조직 마스크 크기 불일치로 실패 (예: 2072×916 vs 1372×2072). 위 결정으로 CellViT 없이 썸네일 조직 타일(`features/scripts/thumb_tiles.py`)로 진행.
 
 - **남은 것:** ① 절대 확률 재보정 방법 결정 ② C2 + 임상(NPI) 결합 점수 ③ H&E로 예측한 발현으로 C2 점수를 계산해 TCGA PFI와 비교 (H&E 단계 평가).
 
@@ -486,13 +471,13 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 | **A4** | **단계 3: R 목록** | METABRIC HR+/HER2− 기록 완전 1,251명 (원격 재발 272건). 유전자별 Cox (log 림프절 수 · 크기 · 등급 · 나이 보정, BH FDR) → FDR < 0.05 전부를 R 목록으로 → `outputs/module1/r_genes.csv` (`labels/scripts/r_genes.py`) | **완료**: **493개** (위험 332 / 보호 161). 보정 없이는 2,054개, 임상 보정으로 1,574개 빠짐. Oncotype 유전자는 증식 4개(AURKA · BIRC5 · CCNB1 · MKI67)만 남음. 처음 계획한 Cox-LASSO · elastic net 안정성 선택은 증식 유전자 묶음에서 대표만 남겨(선택 비율 0–24%) 교집합 목적에 맞지 않아 뺐음. SCAN-B 확인: 493개 Cox 점수 C-index 0.691, elastic net 29개 0.649, 무작위 29개 평균 0.612 |
 | **A5** | 비교 기준선 준비 | 증식 점수 (Oncotype 증식 5개), NPI (METABRIC 열 / SCAN-B는 크기 · 림프절 · NHG로 계산), PAM50 ROR (SCAN-B 제공값), 무작위 유전자 세트, SEQUOIA 272개 서명 (Supplementary Data 5 확보 필요) | **부분 완료** (`scripts/baselines.py`, 결과 `data/{metabric,scanb}/baselines.csv`, `outputs/module1/a5_baselines.json`). 검사 권고 코호트 10년 원격 재발 C-index: METABRIC (989명) 유사 RS 0.625 · 증식 5개 **0.678** · SEQUOIA 0.580 · NPI 0.638 / SCAN-B (3,053명, 점수 모두 있는 환자) 유사 RS **0.702** · 증식 0.663 · SEQUOIA **0.702** · NPI 0.695 · PAM50 ROR 0.655. SEQUOIA는 272개 중 공통 유전자 259개, 계수 × (log2 발현 − 코호트 평균). METABRIC 값이 낮은 것은 TCGA RNA-seq 계수를 마이크로어레이에 그대로 쓴 영향으로 봄. 남은 것: CTS5 (공식 원문 확인), METABRIC ROR (제공값 없음), 무작위 유전자 세트 (C2에서 최종 서명과 같은 개수로) |
 
-### B. H&E 갈래 (TCGA · CPTAC)
+### B. H&E 갈래 (TCGA)
 | # | 작업 | 입력 → 출력 | 완료 기준 · 주의 |
 |---|---|---|---|
 | **B1** | 슬라이드 받기 · QC | GPU 서버(`ssh gpu`, `data/sj/tcga/`)에 HR+/HER2− 514명 DX1 받기 (`slide_download.py`), 썸네일 QC (`slide_qc.py`) | **진행 중** (2026-11-05): 514장 중 510장 받음, 실패분 재시도 중. 1,047명 확장 · 나머지 532명 RNA는 필요할 때 |
 | **B2** | **단계 1: 종양 영역** | 세포 분할 모델 **CellViT-SAM-H** (단계 1 세부 기준 참고) → 타일별 종양 핵 비율 → 기준값 이상 타일 목록 (`tumor_tiles.py`) | **기준 확정** (6장 규칙, 6-1 RNA 조각 맞춤). 514장 처리 진행 중 (GPU 1장 약 7일) |
 | **B3** | 특징 추출 | `features/scripts/extract.py`: **H-optimus-0** (CLS, 1536차원), 128 µm 타일 (20배 256픽셀 해당)을 224로 줄여 입력. 조직 타일 전부 + `tumor_tile` 표시를 슬라이드별 `features/{슬라이드}.h5`에 저장 → 학습 때 종양 / 전체 타일, DX1만 / 모든 슬라이드를 고름. 묶음 실행: `features/scripts/run_batch.py` (받기 → CellViT → 종양 타일 → 특징) | 인코더는 시험 실행으로 H-optimus-0 확정 (2026-11-06, 단계 1 특징 인코더 참고). 시험 속도 초당 224타일 (RTX 5090), 510장 약 5시간. 종양 범위는 CellViT로 확정 (BCSS 비교 위 참고). **H-optimus-0 특징이 생긴 슬라이드만 지움** |
-| **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv`. CPTAC (RNA 133명, 슬라이드 113 GB, ER/HER2는 Krug 2020 Table S1)로 외부 확인 | RNA 조각 맞춤 / 고정 기준 / 전체 타일 세 버전 결과 비교 (`tile_sets.select`) |
+| **B4** | **단계 2: P 목록** | H&E 특징 → 유전자 발현 예측, SEQUOIA 기준으로 "잘 예측됨" 판정, Pearson r 순위 → `outputs/module1/p_genes.csv` | RNA 조각 맞춤 / 고정 기준 / 전체 타일 세 버전 결과 비교 (`tile_sets.select`) |
 
 ### C. 합치기
 | # | 작업 | 완료 기준 |
@@ -503,7 +488,6 @@ B (H&E, 저장 공간)   B1 → B2 → B3 → B4 ──┼→ C1 → C2
 H&E 단계 평가(TCGA에서 H&E 예측 서명 → PFI, Howard · SEQUOIA 방식과 비교)는 C2 이후에 정합니다.
 
 ## 5. 확인하지 못한 것
-- CPTAC-BRCA의 ER/HER2 상태와 슬라이드 종류 (FFPE / 냉동)
 - 썸네일이 깨지거나(check_thumb 6) 타일 API가 실패한(error 5) 11장의 원본 상태 → `run_batch`가 CellViT를 돌리지 않고 목록만 출력
 - 조직 접힘 · 연속 절편 판정 (접힘은 종양 핵도 진해서 단순 진하기 마스크는 종양을 지울 위험 → 보류)
 - ~~SEQUOIA Supplementary Data 5 (272개 유전자 계수)의 공개 여부와 이용 조건~~ → 확보: 논문 MOESM4 엑셀 `Supp. Data 5` 시트 (`data/sequoia/raw/`), 논문 라이선스 CC BY-NC-ND 4.0이라 파일은 저장소에 올리지 않음

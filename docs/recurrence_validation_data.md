@@ -56,7 +56,6 @@ A와 B가 모두 성립하면 "H&E 모델이 예후 정보를 가진 라벨을 �
 | 데이터 | 규모 | 결과 정보 | 접근 | 한계 |
 |---|---|---|---|---|
 | **HistologyHSI-BC Recurrence** (TCIA, *Sci Data* 2025) | 47명, H&E WSI 47장 (+ 초분광 영상) | 원격 재발 22 / 무재발 25, 12년 추적, DFS · OS | TCIA 공개 | 너무 작고 ER+ 수가 문서에 없음. **작은 외부 sanity check** 용도 |
-| CPTAC-BRCA (TCIA + PDC/GDC) | 약 134명, 642장 | 임상은 PDC/GDC, 재발 추적 여부 불확실 | 공개 | 추적 필드 확인 필요. 규모 작음 |
 | Zenodo 6369837 | TCGA FFPE 88장 | 재발/전이 이진 라벨 5건 | 공개 (CC BY 4.0) | **TCGA에서 나온 것**이라 독립 검증 아님 |
 | DRYAD ER+ (TCGA·CINJ·CWRU·HUP) | 584장 | 결과 정보 언급 없음 | 공개 (축소 이미지만) | 원본 크기 슬라이드 미공개 |
 | Duke-Breast-Cancer-MRI (TCIA) | 922명 | **Oncotype 점수**, 재발 | 공개 | **MRI만 있고 H&E 없음** → 이미지 모델 검증 불가 |
@@ -110,6 +109,5 @@ A와 B가 모두 성립하면 "H&E 모델이 예후 정보를 가진 라벨을 �
 - [ABCTB 이미지 컬렉션 (researchdata.edu.au)](https://researchdata.edu.au/breast-cancer-tissue-image-collection/60182)
 - [Nightingale – Identifying High-Risk Breast Cancer (Atlas)](https://atlaslongitudinaldatasets.ac.uk/datasets/identifying-high-risk-breast-cancer-using-digital-pathology-images-a-nightingale-open-science-dataset)
 - [HistologyHSI-BC Recurrence (PMC)](https://pmc.ncbi.nlm.nih.gov/articles/PMC12663337/)
-- [CPTAC-BRCA (TCIA)](https://doi.org/10.7937/tcia.caem-ys80)
 - [Zenodo 6369837](https://zenodo.org/records/6369837)
 - [Duke Breast Cancer MRI dataset](https://sites.duke.edu/mazurowski/resources/breast-cancer-mri-dataset/)

@@ -8,6 +8,8 @@ import argparse
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from pathlib import Path
+
 import pandas as pd
 
 from module1_recurrence.data.scripts.gdc_fetch import RAW, download
@@ -17,8 +19,8 @@ OUT_DIR = RAW.parent / "rnaseq"
 RETRIES = 3
 
 
-def fetch(patient_id, file_id):
-    path = OUT_DIR / f"{patient_id}.tsv"
+def fetch(patient_id, file_id, out_dir=OUT_DIR):
+    path = out_dir / f"{patient_id}.tsv"
     if path.exists():
         return "skip"
     tmp = path.with_suffix(".part")
@@ -36,15 +38,17 @@ def fetch(patient_id, file_id):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, help="앞에서 N명만 받기 (테스트용)")
+    ap.add_argument("--manifest", type=Path, default=MANIFEST, help="다른 환자 목록 (예: data/tcga/other/manifest.csv)")
+    ap.add_argument("--out_dir", type=Path, default=OUT_DIR)
     args = ap.parse_args()
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    m = pd.read_csv(MANIFEST).dropna(subset=["rna_file_id"]).head(args.limit)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    m = pd.read_csv(args.manifest).dropna(subset=["rna_file_id"]).head(args.limit)
 
     with ThreadPoolExecutor(max_workers=4) as ex:
-        results = list(ex.map(fetch, m.patient_id, m.rna_file_id))
+        results = list(ex.map(lambda p, f: fetch(p, f, args.out_dir), m.patient_id, m.rna_file_id))
 
-    print({r: results.count(r) for r in set(results)}, "| files", len(list(OUT_DIR.glob("*.tsv"))))
+    print({r: results.count(r) for r in set(results)}, "| files", len(list(args.out_dir.glob("*.tsv"))))
 
 
 if __name__ == "__main__":

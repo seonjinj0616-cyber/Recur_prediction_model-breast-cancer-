@@ -80,15 +80,24 @@ def main():
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--batch_size", type=int, default=128)
     ap.add_argument("--workers", type=int, default=8, help="타일 읽기 프로세스 수")
+    ap.add_argument("--slide_dir", default="slides", help="슬라이드 폴더 ({root} 아래)")
+    ap.add_argument("--glob", default="*.svs", help="슬라이드 파일 패턴 (HistologyHSI-BC: '*.mrxs')")
+    ap.add_argument("--shard", default=None, help="i/n: 타일 CSV를 이름 순으로 n개로 나눠 i번째만 (GPU 여러 장)")
     args = ap.parse_args()
 
     out = args.root / "features"
     out.mkdir(parents=True, exist_ok=True)
-    svs = {p.name.split(".")[0]: p for p in (args.root / "slides").glob("*.svs")}
+    svs = {p.name.split(".")[0]: p for p in (args.root / args.slide_dir).glob(args.glob)}
     net = None
 
-    for csv in sorted((args.root / "tiles").glob("TCGA-*.csv")):
+    csvs = sorted((args.root / "tiles").glob("*.csv"))
+    if args.shard:
+        i, n = map(int, args.shard.split("/"))
+        csvs = csvs[i::n]
+    for csv in csvs:
         slide = csv.stem
+        if slide == "summary":
+            continue
         dest = out / f"{slide}.h5"
         if slide not in svs or (dest.exists() and done_with_encoder(dest)):
             continue

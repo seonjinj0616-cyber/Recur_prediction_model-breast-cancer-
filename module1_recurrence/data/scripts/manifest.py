@@ -10,6 +10,7 @@ from module1_recurrence.scripts.cohort import RECOMMENDED, standardize_tcga
 from module1_recurrence.data.scripts.gdc_fetch import CLINICAL_FILE_NAME, RAW
 
 OUT = RAW.parent / "manifest.csv"
+OUT_OTHER = RAW.parent / "other" / "manifest.csv"
 
 
 def load_slides():
@@ -39,6 +40,32 @@ def load_cdr():
         columns={"DFI.time": "DFI_time", "PFI.time": "PFI_time"})
 
 
+NTE_FILES = ["nationwidechildrens.org_clinical_nte_brca.txt", "nationwidechildrens.org_clinical_follow_up_v4.0_nte_brca.txt",
+             "nationwidechildrens.org_clinical_follow_up_v2.1_brca.txt"]
+
+
+def load_distant():
+    """원격 전이(new_tumor_event_type = Distant Metastasis)까지 일수. 기록이 여러 개면 가장 이른 것.
+
+    TCGA-CDR의 PFI는 국소 재발 · 원격 전이 · 새 원발암 · 진행 · 암 사망을 합친 것이라 원격 재발 검증에는 이 값을 따로 쓴다.
+    원격 전이가 없으면 마지막 접촉(OS.time, 사망 포함)에서 중도 절단. 파일은 GDC TCGA-BRCA 임상 BCR Biotab (gdc_fetch 참고).
+    """
+    rows = []
+    for f in NTE_FILES:
+        if not (RAW / f).exists():
+            continue
+        d = pd.read_csv(RAW / f, sep="\t", skiprows=[1, 2])
+        x = d[d.new_tumor_event_type.astype(str).str.contains("Distant")]
+        rows += list(zip(x.bcr_patient_barcode, pd.to_numeric(x.new_tumor_event_dx_days_to, errors="coerce")))
+    days = pd.DataFrame(rows, columns=["patient_id", "days"]).groupby("patient_id").days.min()
+    cdr = pd.read_excel(RAW / "TCGA-CDR-SupplementalTableS1.xlsx", sheet_name="TCGA-CDR")
+    cdr = cdr[cdr.type == "BRCA"].set_index("bcr_patient_barcode")
+    out = pd.DataFrame({"last_contact_days": cdr["OS.time"]})
+    out["dm_event"] = out.index.isin(days.index).astype(int)
+    out["dm_days"] = days.reindex(out.index).fillna(out.last_contact_days)
+    return out[["dm_event", "dm_days"]]
+
+
 def build():
     # 1–2행은 긴 열 이름과 CDE_ID라서 건너뛴다
     clin = pd.read_csv(RAW / CLINICAL_FILE_NAME, sep="\t", skiprows=[1, 2])
@@ -65,6 +92,15 @@ def build():
 
     m["recommended"] = m.group.isin(RECOMMENDED)
     m.to_csv(OUT, index=False)
+
+    # H&E → 재발 점수 학습을 늘리기 위한 나머지 아형 (C2 방법 4): 여성 + DX 슬라이드 + RNA, 위 코호트 밖
+    # 원격 전이 검증용: 진단 시 원격 전이(M1)인 환자는 재발이 아니라서 m1 표시를 남긴다
+    other = (std[(clin.gender == "FEMALE").values].join(load_slides(), on="patient_id")
+             .join(load_rna(), on="patient_id").join(load_cdr(), on="patient_id").join(load_distant(), on="patient_id"))
+    other["m1"] = clin.set_index("bcr_patient_barcode").ajcc_metastasis_pathologic_pm.reindex(other.patient_id).astype(str).str.startswith("M1").to_numpy()
+    other = other[other.slide_file_ids.notna() & other.rna_file_id.notna() & ~other.patient_id.isin(m.patient_id)]
+    other.to_csv(OUT_OTHER, index=False)
+    print(f"other subtypes (female + DX + RNA, not in cohort) {len(other)} | slides GB {other.slide_gb.sum():.0f} → {OUT_OTHER}")
 
     summary = m.groupby("group").agg(n=("patient_id", "size"), pfi_events=("PFI", "sum"),
                                      dfi_n=("DFI", "count"), dfi_events=("DFI", "sum"))

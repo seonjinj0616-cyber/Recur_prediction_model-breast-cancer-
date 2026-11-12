@@ -11,6 +11,7 @@ from module1_recurrence.data.scripts.gdc_fetch import CLINICAL_FILE_NAME, RAW
 
 OUT = RAW.parent / "manifest.csv"
 OUT_OTHER = RAW.parent / "other" / "manifest.csv"
+OUT_DISTANT = RAW.parent / "distant.csv"  # TCGA-BRCA 전체 환자의 원격 전이 사건 · 일수 (dm_event, dm_days)
 
 
 def load_slides():
@@ -92,6 +93,8 @@ def build():
 
     m["recommended"] = m.group.isin(RECOMMENDED)
     m.to_csv(OUT, index=False)
+    # 원격 재발 결과는 manifest를 바꾸지 않고 따로 저장 (H&E → 재발 평가용)
+    load_distant().rename_axis("patient_id").to_csv(OUT_DISTANT)
 
     # H&E → 재발 점수 학습을 늘리기 위한 나머지 아형 (C2 방법 4): 여성 + DX 슬라이드 + RNA, 위 코호트 밖
     # 원격 전이 검증용: 진단 시 원격 전이(M1)인 환자는 재발이 아니라서 m1 표시를 남긴다

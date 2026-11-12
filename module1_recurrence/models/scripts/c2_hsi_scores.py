@@ -1,15 +1,15 @@
-"""외부 검증용 H&E 점수 (서버): TCGA HR+/HER2− 513명으로 H&E → C2 점수 모델을 학습하고, 학습에 쓰지 않은 환자에만 점수를 매긴다.
+"""H&E → 원격 재발 평가용 점수 (서버): H&E → C2 재발 점수 모델을 만들고, 그 모델을 학습하지 않은 환자에게만 점수를 매긴다.
 
-CellViT 없이 전체 조직(썸네일 타일, thumb_tiles)만 쓴다 (2026-11-11 결정: 최종 점수 모델 · 검증은 CellViT 없이).
+모듈 질문: HR+/HER2− 조기 유방암에서 H&E로 Oncotype처럼 10년 **원격** 재발 위험을 예측할 수 있는가 (평가는 원격 재발만).
+입력은 CellViT 없이 전체 조직(썸네일 타일, thumb_tiles)만 쓴다 (2026-11-11 결정: 최종 점수 모델 · 평가는 CellViT 없이).
 정답 점수 = TCGA 측정 RNA(log2 TPM, 학습 환자 안 z-score) × C2 가중치(METABRIC 학습, c2_signature_weights.csv) 합.
-모델 (방법 1): 슬라이드 벡터(조직 타일 특징 평균, DX1) → 정답 점수 Ridge, 학습 환자 전체로 한 번 학습.
-검증 (학습에 쓰지 않음):
-- HistologyHSI-BC 47명
-- TCGA 다른 아형 (data/tcga/other, 학습 · 유전자 선택 어디에도 쓰지 않음), 진단 시 원격 전이(M1) 제외.
-  재발 = 10년 원격 전이 (임상 new tumor event, manifest.load_distant). PFI(국소 재발 · 진행 포함)도 참고로 남김.
-  측정 RNA 점수(같은 학습 평균 · 표준편차로 z-score)도 같이 남겨 상한선으로 비교
-실행: python -m module1_recurrence.models.scripts.c2_hsi_scores --train data/sj/tcga_thumb --hsi data/sj/hsi --other data/sj/tcga_other --weights data/sj/tcga/c2_he/c2_signature_weights.csv
-결과: {hsi}/c2_validation_scores.csv (cohort, id, score, TCGA 다른 아형은 measured · group · 원격 전이 시간 · 사건 · PFI)
+모델 (방법 1): 슬라이드 벡터(조직 타일 특징 평균, DX1) → 정답 점수 Ridge.
+평가 대상
+- TCGA HR+/HER2− (학습 코호트): 기관(TSS) 단위 5-fold 교차검증 점수 → 각 환자는 자기 병원을 학습에서 본 적 없는 모델의 점수.
+  재발 = 10년 원격 전이 ({train}/distant.csv, 임상 new tumor event, manifest.load_distant). 측정 RNA 점수도 상한선으로 남김.
+- HistologyHSI-BC: TCGA 전체로 학습한 모델의 점수 (재발 정보는 c2_hsi_eval에서 임상 표와 붙임).
+실행: python -m module1_recurrence.models.scripts.c2_hsi_scores --train data/sj/tcga_thumb --hsi data/sj/hsi --weights data/sj/tcga/c2_he/c2_signature_weights.csv
+결과: {hsi}/c2_validation_scores.csv (cohort, id, score, TCGA는 measured · recommended · time · event)
 """
 import argparse
 from pathlib import Path
@@ -18,6 +18,7 @@ import h5py
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import RidgeCV
+from sklearn.model_selection import GroupKFold, cross_val_predict
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -34,52 +35,44 @@ def slide_means(feat_dir, pattern="*.h5"):
     return pd.DataFrame(vec).T
 
 
-def tcga_vectors(root):
-    x = slide_means(root / "features", "TCGA-*DX1.h5")
-    x.index = x.index.str[:12]
-    return x
+def model():
+    return make_pipeline(StandardScaler(), RidgeCV(alphas=ALPHAS))
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--train", type=Path, required=True, help="학습 TCGA 폴더 (features/ · expr.parquet · manifest.csv)")
+    ap.add_argument("--train", type=Path, required=True, help="TCGA HR+/HER2− 폴더 (features/ · expr.parquet · manifest.csv · distant.csv)")
     ap.add_argument("--hsi", type=Path, required=True)
-    ap.add_argument("--other", type=Path, required=True, help="TCGA 다른 아형 폴더 (features/ · expr.parquet · manifest.csv)")
     ap.add_argument("--weights", type=Path, required=True)
     args = ap.parse_args()
 
     w = pd.read_csv(args.weights).set_index("covariate").weight
-    x = tcga_vectors(args.train)
+    x = slide_means(args.train / "features", "TCGA-*DX1.h5")
+    x.index = x.index.str[:12]
     expr = pd.read_parquet(args.train / "expr.parquet")
-    pids = x.index.intersection(expr.index)
+    m = pd.read_csv(args.train / "manifest.csv").set_index("patient_id")
+    dist = pd.read_csv(args.train / "distant.csv", index_col="patient_id")
+    pids = x.index.intersection(expr.index).intersection(m.index)
     genes = [g for g in w.index if g in expr.columns]
-    mu, sd = expr.loc[pids, genes].mean(), expr.loc[pids, genes].std()
-    rna_score = lambda e: (((e[genes] - mu) / sd).replace([np.inf, -np.inf], np.nan).fillna(0) @ w[genes])  # noqa: E731
-    model = make_pipeline(StandardScaler(), RidgeCV(alphas=ALPHAS)).fit(x.loc[pids].to_numpy(), rna_score(expr.loc[pids]).to_numpy())
-    print("trained on", len(pids), "TCGA HR+/HER2- patients | alpha", model[-1].alpha_)
+    e = expr.loc[pids, genes]
+    truth = ((e - e.mean()) / e.std()).fillna(0) @ w[genes]
 
+    oof = cross_val_predict(model(), x.loc[pids].to_numpy(), truth.to_numpy(), cv=GroupKFold(5), groups=pids.str[5:7].to_numpy())
+    d = dist.reindex(pids)
+    tcga = pd.DataFrame({"cohort": "TCGA HR+/HER2- (CV)", "score": oof, "measured": truth.to_numpy(),
+                         "recommended": m.loc[pids, "recommended"].to_numpy(),
+                         "time": d.dm_days.clip(upper=TEN_YEARS).to_numpy(),
+                         "event": ((d.dm_event == 1) & (d.dm_days <= TEN_YEARS)).astype(int).to_numpy()}, index=pids)
+    print("TCGA", len(pids), "patients, CV r with RNA score", round(float(np.corrcoef(oof, truth)[0, 1]), 3),
+          "| distant 10y", int(tcga.event.sum()))
+
+    full = model().fit(x.loc[pids].to_numpy(), truth.to_numpy())
     h = slide_means(args.hsi / "features")
-    out = [pd.DataFrame({"cohort": "HistologyHSI-BC", "score": model.predict(h.to_numpy())}, index=h.index)]
-
-    xo = tcga_vectors(args.other)
-    if len(xo):
-        m = pd.read_csv(args.other / "manifest.csv").set_index("patient_id")
-        m = m[~m.m1 & m.dm_days.notna()]  # 원격 재발 검증: 진단 시 원격 전이(M1) · 추적 시간 없는 환자 제외
-        eo = pd.read_parquet(args.other / "expr.parquet")
-        po = xo.index.intersection(m.index).intersection(eo.index)
-        assert not set(po) & set(pids), "검증 환자가 학습에 들어 있음"
-        out.append(pd.DataFrame({"cohort": "TCGA other subtypes", "score": model.predict(xo.loc[po].to_numpy()),
-                                 "measured": rna_score(eo.loc[po]).to_numpy(), "group": m.loc[po, "group"].to_numpy(),
-                                 "time": m.loc[po, "dm_days"].clip(upper=TEN_YEARS).to_numpy(),
-                                 "event": ((m.loc[po, "dm_event"] == 1) & (m.loc[po, "dm_days"] <= TEN_YEARS)).astype(int).to_numpy(),
-                                 "pfi_time": m.loc[po, "PFI_time"].clip(upper=TEN_YEARS).to_numpy(),
-                                 "pfi_event": ((m.loc[po, "PFI"] == 1) & (m.loc[po, "PFI_time"] <= TEN_YEARS)).astype(int).to_numpy()},
-                                index=po))
-        print("TCGA other subtypes scored", len(po))
-    res = pd.concat(out)
-    res.index.name = "id"
-    res.to_csv(args.hsi / "c2_validation_scores.csv")
-    print(res.groupby("cohort").size())
+    hsi = pd.DataFrame({"cohort": "HistologyHSI-BC", "score": full.predict(h.to_numpy())}, index=h.index)
+    out = pd.concat([tcga, hsi])
+    out.index.name = "id"
+    out.to_csv(args.hsi / "c2_validation_scores.csv")
+    print("HistologyHSI-BC", len(hsi), "slides | alpha", full[-1].alpha_)
 
 
 if __name__ == "__main__":

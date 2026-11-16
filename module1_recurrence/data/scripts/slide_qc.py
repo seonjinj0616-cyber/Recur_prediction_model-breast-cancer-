@@ -158,7 +158,8 @@ def from_svs(names, root):
         o = openslide.OpenSlide(str(next((root / "slides").glob(f"{name}.*.svs"))))
         w, h = o.dimensions
         down = 2 ** max(0, math.ceil(math.log2(max(w, h) / MAX_SIDE)))
-        img = o.get_thumbnail((math.ceil(w / down), math.ceil(h / down))).convert("RGB")
+        # 원본 메타데이터(ICC 등)가 PNG에 따라가면 Pillow가 다시 열지 못함 (AC-A8OQ) → 픽셀만 저장
+        img = Image.fromarray(np.asarray(o.get_thumbnail((math.ceil(w / down), math.ceil(h / down))).convert("RGB")))
         img.save(out / "thumbs" / f"{name}.png")
         stats, pen = measure(img)
         Image.fromarray(pen.astype(np.uint8) * 255).save(out / "pen_masks" / f"{name}.png")

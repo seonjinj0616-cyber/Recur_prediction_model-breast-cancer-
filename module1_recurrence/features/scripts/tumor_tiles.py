@@ -157,6 +157,9 @@ def main():
             rows.append({"slide": slide, "stain": row.stain})
             print(slide, "skip (IHC suspect)")
             continue
+        if pd.isna(row.downsample):  # QC 썸네일이 없음 (GDC 썸네일 오류) → slide_qc --from_svs로 다시 만든 뒤 처리
+            print(slide, "skip (no QC thumbnail, run slide_qc --from_svs)")
+            continue
         r = process(slide, det, row, qc_dir, out, args.min_ratio, args.min_neoplastic, args.min_cells)
         rows.append(r)
         print(r)

@@ -101,7 +101,7 @@ def main():
     w = model.params_.rename("weight").to_frame().join(pd.read_csv(OUT_DIR / "c1_overlap.csv").set_index("gene")[["module", "direction", "r"]])
     w.sort_values("weight", key=abs, ascending=False).to_csv(OUT_DIR / "c2_signature_weights.csv")
 
-    universe = pd.read_csv(OUT_DIR / "p_genes" / "p_genes_matched_dx1_tss.csv").gene
+    universe = pd.read_csv(OUT_DIR / "p_genes_1045" / "p_genes_matched_dx1_tss_hr.csv").gene
     universe = [g for g in universe if g in mb_expr.columns and g not in set(genes)]
 
     sb_expr = zscore(load("scanb"))

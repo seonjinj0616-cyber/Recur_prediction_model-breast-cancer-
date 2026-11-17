@@ -6,7 +6,7 @@
    단 |r| ≥ 0.5일 때만 배정하고 나머지는 "기타". 표지 유전자 자신은 그 묶음으로 둔다.
    묶음: 증식 · 면역 · 기질 · 에스트로겐 반응 (표지는 아래 MODULES, 널리 쓰이는 대표 유전자 5개씩).
 3. R의 방향(위험비 > 1: 재발 위험 ↑ / < 1: ↓)과 묶음별 개수를 P ∩ R · R 전체 · P 전체 · 전체 유전자에서 비교.
-실행: python -m module1_recurrence.models.scripts.c1_overlap [--p outputs/module1/p_genes/p_genes_matched_dx1_tss.csv]
+실행: python -m module1_recurrence.models.scripts.c1_overlap [--p outputs/module1/p_genes_1045/p_genes_matched_dx1_tss_hr.csv]
 결과: outputs/module1/c1_overlap.csv (교집합 유전자), c1_overlap.json (요약)
 """
 import argparse
@@ -45,7 +45,7 @@ def module_of(expr):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--p", type=Path, default=OUT_DIR / "p_genes" / "p_genes_matched_dx1_tss.csv", help="B4 결과 csv")
+    ap.add_argument("--p", type=Path, default=OUT_DIR / "p_genes_1045" / "p_genes_matched_dx1_tss_hr.csv", help="B4 결과 csv (기본: 1,045명 학습 · HR+/HER2− 안 판정)")
     ap.add_argument("--r", type=Path, default=OUT_DIR / "r_genes.csv")
     ap.add_argument("--r_all", type=Path, default=OUT_DIR / "r_gene_cox_all.csv", help="R 판정이 가능한 전체 유전자")
     ap.add_argument("--expr", type=Path, default=DATA / "tcga" / "expr.parquet")

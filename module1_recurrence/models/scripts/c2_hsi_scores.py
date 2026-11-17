@@ -44,6 +44,7 @@ def main():
     ap.add_argument("--train", type=Path, required=True, help="TCGA HR+/HER2− 폴더 (features/ · expr.parquet · manifest.csv · distant.csv)")
     ap.add_argument("--hsi", type=Path, required=True)
     ap.add_argument("--weights", type=Path, required=True)
+    ap.add_argument("--out", type=Path, default=None, help="결과 csv (기본: {hsi}/c2_validation_scores.csv)")
     args = ap.parse_args()
 
     w = pd.read_csv(args.weights).set_index("covariate").weight
@@ -71,7 +72,7 @@ def main():
     hsi = pd.DataFrame({"cohort": "HistologyHSI-BC", "score": full.predict(h.to_numpy())}, index=h.index)
     out = pd.concat([tcga, hsi])
     out.index.name = "id"
-    out.to_csv(args.hsi / "c2_validation_scores.csv")
+    out.to_csv(args.out or args.hsi / "c2_validation_scores.csv")
     print("HistologyHSI-BC", len(hsi), "slides | alpha", full[-1].alpha_)
 
 

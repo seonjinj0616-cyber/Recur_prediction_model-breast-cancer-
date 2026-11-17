@@ -56,8 +56,14 @@ def summarize(groups, rng):
 
 
 def main():
+    import argparse
+    from pathlib import Path
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--scores", type=Path, default=HSI / "c2_validation_scores.csv")
+    ap.add_argument("--out", type=Path, default=OUT_DIR / "c2_validation.json")
+    args = ap.parse_args()
     rng = np.random.default_rng(0)
-    s = pd.read_csv(HSI / "c2_validation_scores.csv", index_col="id", dtype={"id": str})
+    s = pd.read_csv(args.scores, index_col="id", dtype={"id": str})
     clin = pd.read_excel(HSI / "clinical.xlsx", sheet_name="Clinical Data")
     clin.index = clin["Case ID"].astype(str)
     hsi = s[s.cohort == "HistologyHSI-BC"].drop(columns=["time", "event"], errors="ignore").join(clin, how="inner")
@@ -74,7 +80,7 @@ def main():
         "pooled (stratified)": summarize([g(tcga), g(hsi_hr)], rng)}, "secondary": {
         "TCGA recommended (CV)": {**summarize([g(tcga_rec)], rng), "measured_rna_score": summarize([g(tcga_rec, "measured")], rng)},
         "HistologyHSI-BC all 47": {**summarize([g(hsi)], rng), "npi": summarize([g(hsi, "npi")], rng)}}}
-    (OUT_DIR / "c2_validation.json").write_text(json.dumps(res, indent=2, ensure_ascii=False))
+    args.out.write_text(json.dumps(res, indent=2, ensure_ascii=False))
     print(json.dumps(res, indent=2, ensure_ascii=False))
 
 
